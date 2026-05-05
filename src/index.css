@@ -1,3 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+:root {
+  --mac-window-bg:    #ffffff;
+  --mac-window-text:  #1a1a1a;
+  --mac-title-bg:     #ececec;
+  --mac-title-border: #d0d0d0;
+  --mac-sidebar-bg:   #f0f0f0;
+  --mac-card-bg:      #f7f7f7;
+  --mac-card-border:  #e0e0e0;
+  --mac-muted:        #888888;
+  --mac-menubar-bg:   rgba(236,236,236,0.92);
+  --mac-tag-bg:       #e4e4e4;
+  --mac-tag-text:     #555555;
+  --mac-mobile-bg:    #f2f2f2;
+  --mac-mobile-card:  #ffffff;
+}
+
+:root.dark {
+  --mac-window-bg:    #2b2b2b;
+  --mac-window-text:  #e8e8e8;
+  --mac-title-bg:     #3a3a3a;
+  --mac-title-border: #1e1e1e;
+  --mac-sidebar-bg:   #232323;
+  --mac-card-bg:      #333333;
+  --mac-card-border:  #444444;
+  --mac-muted:        #888888;
+  --mac-menubar-bg:   rgba(40,40,40,0.92);
+  --mac-tag-bg:       #444444;
+  --mac-tag-text:     #aaaaaa;
+  --mac-mobile-bg:    #1e1e1e;
+  --mac-mobile-card:  #2b2b2b;
+}
+
+@layer utilities {
+  .mac-window     { background: var(--mac-window-bg);   color: var(--mac-window-text); }
+  .mac-titlebar   { background: var(--mac-title-bg);    border-bottom: 1px solid var(--mac-title-border); }
+  .mac-card       { background: var(--mac-card-bg);     border: 1px solid var(--mac-card-border); }
+  .mac-tag        { background: var(--mac-tag-bg);      color: var(--mac-tag-text); }
+  .mac-menubar    { background: var(--mac-menubar-bg);  border-bottom: 1px solid var(--mac-title-border); }
+  .mac-mobile-bg  { background: var(--mac-mobile-bg); }
+  .mac-mobile-card { background: var(--mac-mobile-card); border: 1px solid var(--mac-card-border); }
+  .font-os        { font-family: 'JetBrains Mono', monospace; }
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--mac-card-border); border-radius: 2px; }
