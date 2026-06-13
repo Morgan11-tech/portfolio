@@ -1,11 +1,14 @@
+import expressmedCover from '../assets/expressmed-cover.png'
+import homecare from '../assets/homecare.png'
+
 export const PROJECTS = [
   {
     id: 'expressmed-patient-app',
     name: 'ExpressMed Patient App',
     status: 'deployed',
     date: '2023 - Present',
-    thumbnail: 'src/assets/expressmed-cover.png',
-    images: ['src/assets/expressmed-cover.png', 'src/assets/homecare.png'],
+    thumbnail: expressmedCover,
+    images: [expressmedCover, homecare],
     shortDesc: 'Cross-platform mobile app for booking healthcare appointments with integrated payment flow.',
     longDesc: 'Built with Flutter and Firebase, this app allows patients to book appointments in real time, and navigate payment flows. Includes push notifications for reminders and appointment confirmations. Live on both the Google Play Store and Apple App Store.',
     tech: ['Flutter', 'Firebase', 'Dart'],
@@ -15,24 +18,6 @@ export const PROJECTS = [
       htmlDemo: null,
       playstore: 'https://play.google.com/store/apps/details?id=expressmed.patient&pcampaignid=web_share',
       appstore: 'https://apps.apple.com/gh/app/expressmed-healthcare/id6744465789',
-    }
-  },
-  {
-    id: 'fintrack',
-    name: 'Financial Management System',
-    status: 'completed',
-    date: '2024',
-    thumbnail: null,
-    images: [],
-    shortDesc: 'Full-stack web app for personal finance tracking with dashboard analytics.',
-    longDesc: 'A comprehensive financial management system with a React frontend and Java Spring Boot backend. Features expense categorisation, income tracking, budget targets, and interactive data visualisation dashboards.',
-    tech: ['React', 'Java Spring', 'REST API', 'SQL'],
-    links: {
-      github: null,
-      video: null,
-      htmlDemo: '/demos/fintrack.html',
-      playstore: null,
-      appstore: null,
     }
   },
 ]
