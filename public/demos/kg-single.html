@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knowledge Graph Explorer</title>
+
+  <!--
+    vis-network: the graph rendering library.
+    For offline use, download these files and point src/href to local paths.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.2/dist/vis-network.min.js"></script>
+  <link  href="https://cdn.jsdelivr.net/npm/vis-network@9.1.2/dist/vis-network.min.css" rel="stylesheet">
+
+  <style>
+    /* ── Reset ─────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Design tokens ─────────────────────────────────────────────────── */
+    :root {
+      --bg:           #F8F7F5;
+      --surface:      #FFFFFF;
+      --border:       #E5E3DC;
+      --border-light: #F0EFE8;
+      --text:         #1A1A18;
+      --text-sec:     #5F5E5A;
+      --text-ter:     #9B9A96;
+      --accent:       #2B55CC;
+      --canvas-bg:    #FAFAF8;
+      --sidebar-w:    260px;
+      --detail-w:     288px;
+      --header-h:     52px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    button, input { font-family: inherit; font-size: 13px; }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    #app-header {
+      height: var(--header-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    #app-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    #header-divider {
+      width: 1px;
+      height: 18px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    #disease-label {
+      font-size: 12px;
+      color: var(--text-sec);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 260px;
+    }
+
+    #header-counts {
+      display: flex;
+      gap: 5px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .count-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--border-light);
+      color: var(--text-sec);
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    #header-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    .action-btn {
+      font-size: 12px;
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--surface);
+      color: var(--text-sec);
+      cursor: pointer;
+    }
+    .action-btn:hover { background: var(--border-light); color: var(--text); }
+
+    /* ── App body ──────────────────────────────────────────────────────── */
+    #app-body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ───────────────────────────────────────────────────────── */
+    #sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    #sidebar::-webkit-scrollbar { width: 4px; }
+    #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .sidebar-section {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-ter);
+      margin-bottom: 10px;
+    }
+
+    /* Disease card */
+    #disease-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+      margin-bottom: 3px;
+    }
+
+    #disease-id {
+      font-size: 10px;
+      font-family: monospace;
+      color: var(--text-ter);
+      margin-bottom: 8px;
+    }
+
+    #disease-desc {
+      font-size: 12px;
+      color: var(--text-sec);
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    #disease-desc.expanded { display: block; }
+
+    #desc-toggle {
+      font-size: 11px;
+      color: var(--accent);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 4px 0 0;
+      display: block;
+    }
+    #desc-toggle:hover { text-decoration: underline; }
+
+    #disease-external {
+      display: inline-block;
+      font-size: 11px;
+      color: var(--accent);
+      text-decoration: none;
+      margin-top: 8px;
+    }
+    #disease-external:hover { text-decoration: underline; }
+
+    /* Filter rows */
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 7px;
+      cursor: pointer;
+    }
+    .filter-row:last-child { margin-bottom: 0; }
+
+    .filter-row input[type="checkbox"] {
+      width: 13px;
+      height: 13px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .filter-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .filter-name  { flex: 1; font-size: 12px; color: var(--text-sec); }
+    .filter-count { font-size: 11px; color: var(--text-ter); font-variant-numeric: tabular-nums; }
+
+    /* Search */
+    #search-input {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 12px;
+      color: var(--text);
+      background: var(--canvas-bg);
+      outline: none;
+    }
+    #search-input:focus { border-color: #B4B2A9; }
+    #search-input::placeholder { color: var(--text-ter); }
+
+    #search-hint { font-size: 11px; color: var(--text-ter); margin-top: 5px; }
+
+    /* View controls */
+    .ctrl-btn {
+      display: block;
+      width: 100%;
+      padding: 7px 10px;
+      margin-bottom: 5px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--canvas-bg);
+      color: var(--text-sec);
+      cursor: pointer;
+      text-align: left;
+    }
+    .ctrl-btn:hover { background: var(--border-light); color: var(--text); }
+    .ctrl-btn:last-child { margin-bottom: 0; }
+
+    /* ── Graph canvas ──────────────────────────────────────────────────── */
+    #canvas-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: var(--canvas-bg);
+    }
+
+    #graph-canvas { width: 100%; height: 100%; }
+
+    /* Loading overlay */
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(250, 250, 248, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      z-index: 50;
+    }
+
+    #loading-label { font-size: 13px; color: var(--text-sec); }
+
+    #loading-bar-wrap {
+      width: 180px;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    #loading-bar {
+      height: 100%;
+      width: 0%;
+      background: #534AB7;
+      border-radius: 2px;
+      transition: width 0.1s;
+    }
+
+    /* ── Details panel ─────────────────────────────────────────────────── */
+    #details-panel {
+      width: var(--detail-w);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      overflow-y: auto;
+      overflow-x: hidden;
+      transition: width 0.2s ease, border-left-width 0.2s ease;
+    }
+
+    #details-panel.closed {
+      width: 0;
+      border-left-width: 0;
+      overflow: hidden;
+    }
+
+    #details-panel::-webkit-scrollbar { width: 4px; }
+    #details-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    #details-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 0;
+    }
+
+    #details-header-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-ter);
+    }
+
+    #close-btn {
+      font-size: 11px;
+      color: var(--text-ter);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    #close-btn:hover { color: var(--text); }
+
+    #details-body { padding: 12px 16px 20px; }
+
+    .detail-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    .detail-node-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+      margin-bottom: 3px;
+    }
+
+    .detail-node-id {
+      font-size: 10px;
+      font-family: monospace;
+      color: var(--text-ter);
+      margin-bottom: 10px;
+    }
+
+    .detail-description {
+      font-size: 12px;
+      color: var(--text-sec);
+      line-height: 1.6;
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .detail-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-ter);
+      margin: 14px 0 8px;
+    }
+
+    .props-table { width: 100%; border-collapse: collapse; }
+    .props-table tr { border-bottom: 1px solid var(--border-light); }
+    .props-table tr:last-child { border-bottom: none; }
+    .props-table td { padding: 5px 0; font-size: 12px; vertical-align: top; }
+
+    .prop-key { color: var(--text-ter); padding-right: 10px; white-space: nowrap; width: 42%; }
+    .prop-val { color: var(--text-sec); word-break: break-word; }
+
+    .conn-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+
+    .detail-external-link {
+      display: block;
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-light);
+    }
+    .detail-external-link:hover { text-decoration: underline; }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <header id="app-header">
+    <span id="app-title">Knowledge Graph Explorer</span>
+    <div id="header-divider"></div>
+    <span id="disease-label">Loading...</span>
+    <div id="header-counts"></div>
+    <div id="header-actions">
+      <button class="action-btn" onclick="resetView()">Fit to screen</button>
+      <button class="action-btn" onclick="exportPNG()">Export PNG</button>
+    </div>
+  </header>
+
+  <!-- ── App body ────────────────────────────────────────────────────── -->
+  <div id="app-body">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────────── -->
+    <aside id="sidebar">
+
+      <div class="sidebar-section">
+        <div class="section-label">Disease</div>
+        <div id="disease-name"></div>
+        <div id="disease-id"></div>
+        <div id="disease-desc"></div>
+        <button id="desc-toggle" onclick="toggleDescription()">Read more</button>
+        <a id="disease-external" href="#" target="_blank" rel="noopener" style="display:none">
+          View in database
+        </a>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-label">Node types</div>
+        <div id="node-filter-list"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-label">Relationships</div>
+        <div id="edge-filter-list"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-label">Search</div>
+        <input id="search-input" type="text" placeholder="Search by name...">
+        <div id="search-hint"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-label">View</div>
+        <button class="ctrl-btn" onclick="resetView()">Fit graph to screen</button>
+      </div>
+
+    </aside>
+
+    <!-- ── Graph canvas ─────────────────────────────────────────────── -->
+    <main id="canvas-wrap">
+      <div id="graph-canvas"></div>
+
+      <div id="loading-overlay">
+        <div id="loading-label">Laying out graph...</div>
+        <div id="loading-bar-wrap">
+          <div id="loading-bar"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ── Details panel ────────────────────────────────────────────── -->
+    <aside id="details-panel" class="closed">
+      <div id="details-header">
+        <span id="details-header-label">Node details</span>
+        <button id="close-btn" onclick="closeDetails()">Close</button>
+      </div>
+      <div id="details-body"></div>
+    </aside>
+
+  </div>
+
+
+  <script>
+    /*
+     * Graph data injected by the Python pipeline.
+     * Shape: { meta: {...}, nodes: [...], edges: [...] }
+     */
+    const GRAPH_DATA = {"meta": {"title": "lung cancer", "disease_id": "MONDO_0008903", "description": "A malignant neoplasm involving the lung.", "counts": {"DIS": 1, "DRG": 307, "GEN": 199, "PHE": 5}, "edge_counts": {"INDICATION": 307, "ASSOCIATED_WITH": 200, "PHENOTYPE_PRESENT": 5}}, "nodes": [{"id": "MONDO_0008903", "label": "lung cancer", "type": "DIS", "size": 36, "props": {"description": "A malignant neoplasm involving the lung.", "xrefs": "ICD9:162.9, OMIM:211980, ICD9:162.4, NCIT:C7377, SCTID:363358000, ICD9:162.5, ICD9:162.8, DOID:1324, UMLS:C0242379, MEDGEN:66885"}}, {"id": "CHEMBL100259", "label": "URIDINE", "type": "DRG", "size": 16, "props": {"full_name": "URIDINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1006", "label": "AMIFOSTINE", "type": "DRG", "size": 16, "props": {"full_name": "AMIFOSTINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1023", "label": "BEXAROTENE", "type": "DRG", "size": 16, "props": {"full_name": "BEXAROTENE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1024", "label": "IFOSFAMIDE", "type": "DRG", "size": 16, "props": {"full_name": "IFOSFAMIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL105", "label": "MITOMYCIN", "type": "DRG", "size": 16, "props": {"full_name": "MITOMYCIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL105442", "label": "CI-1040", "type": "DRG", "size": 16, "props": {"full_name": "CI-1040", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1064", "label": "SIMVASTATIN", "type": "DRG", "size": 16, "props": {"full_name": "SIMVASTATIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1076903", "label": "VARENICLINE", "type": "DRG", "size": 16, "props": {"full_name": "VARENICLINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1079175", "label": "MK-2206", "type": "DRG", "size": 16, "props": {"full_name": "MK-2206", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1079742", "label": "ERLOTINIB HYDROCHLORI.", "type": "DRG", "size": 16, "props": {"full_name": "ERLOTINIB HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1086863", "label": "FLUDEOXYGLUCOSE", "type": "DRG", "size": 16, "props": {"full_name": "FLUDEOXYGLUCOSE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL109", "label": "VALPROIC ACID", "type": "DRG", "size": 16, "props": {"full_name": "VALPROIC ACID", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1092067", "label": "FLUDEOXYGLUCOSE F 18", "type": "DRG", "size": 16, "props": {"full_name": "FLUDEOXYGLUCOSE F 18", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1094636", "label": "NIRAPARIB", "type": "DRG", "size": 16, "props": {"full_name": "NIRAPARIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL109480", "label": "TANESPIMYCIN", "type": "DRG", "size": 16, "props": {"full_name": "TANESPIMYCIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1096882", "label": "FLUDARABINE PHOSPHATE", "type": "DRG", "size": 16, "props": {"full_name": "FLUDARABINE PHOSPHATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1098319", "label": "2-MERCAPTOETHANESULFO.", "type": "DRG", "size": 16, "props": {"full_name": "2-MERCAPTOETHANESULFONIC ACID", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL113178", "label": "SELENOMETHIONINE", "type": "DRG", "size": 16, "props": {"full_name": "SELENOMETHIONINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL11359", "label": "CISPLATIN", "type": "DRG", "size": 16, "props": {"full_name": "CISPLATIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1144", "label": "PRAVASTATIN", "type": "DRG", "size": 16, "props": {"full_name": "PRAVASTATIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1173655", "label": "AFATINIB", "type": "DRG", "size": 16, "props": {"full_name": "AFATINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL118", "label": "CELECOXIB", "type": "DRG", "size": 16, "props": {"full_name": "CELECOXIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL118218", "label": "IROFULVEN", "type": "DRG", "size": 16, "props": {"full_name": "IROFULVEN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1184904", "label": "RETASPIMYCIN", "type": "DRG", "size": 16, "props": {"full_name": "RETASPIMYCIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1186894", "label": "AMRUBICIN", "type": "DRG", "size": 16, "props": {"full_name": "AMRUBICIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL118841", "label": "PYRAZOLOACRIDINE", "type": "DRG", "size": 16, "props": {"full_name": "PYRAZOLOACRIDINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1200485", "label": "SORAFENIB TOSYLATE", "type": "DRG", "size": 16, "props": {"full_name": "SORAFENIB TOSYLATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1200574", "label": "SODIUM CHLORIDE", "type": "DRG", "size": 16, "props": {"full_name": "SODIUM CHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1200645", "label": "ETOPOSIDE PHOSPHATE", "type": "DRG", "size": 16, "props": {"full_name": "ETOPOSIDE PHOSPHATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1200680", "label": "SELENIUM SULFIDE", "type": "DRG", "size": 16, "props": {"full_name": "SELENIUM SULFIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1200796", "label": "CYCLOPHOSPHAMIDE", "type": "DRG", "size": 16, "props": {"full_name": "CYCLOPHOSPHAMIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1200981", "label": "EPIRUBICIN HYDROCHLOR.", "type": "DRG", "size": 16, "props": {"full_name": "EPIRUBICIN HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1201182", "label": "TEMSIROLIMUS", "type": "DRG", "size": 16, "props": {"full_name": "TEMSIROLIMUS", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1201304", "label": "INDOCYANINE GREEN ACI.", "type": "DRG", "size": 16, "props": {"full_name": "INDOCYANINE GREEN ACID FORM", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1201438", "label": "ALDESLEUKIN", "type": "DRG", "size": 16, "props": {"full_name": "ALDESLEUKIN", "drug_type": "Protein", "approved": "Yes"}}, {"id": "CHEMBL1201460", "label": "DALTEPARIN SODIUM", "type": "DRG", "size": 16, "props": {"full_name": "DALTEPARIN SODIUM", "drug_type": "Oligosaccharide", "approved": "Yes"}}, {"id": "CHEMBL1201481", "label": "PORFIMER SODIUM", "type": "DRG", "size": 16, "props": {"full_name": "PORFIMER SODIUM", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1201565", "label": "EPOETIN ALFA", "type": "DRG", "size": 16, "props": {"full_name": "EPOETIN ALFA", "drug_type": "Protein", "approved": "Yes"}}, {"id": "CHEMBL1201567", "label": "FILGRASTIM", "type": "DRG", "size": 16, "props": {"full_name": "FILGRASTIM", "drug_type": "Protein", "approved": "Yes"}}, {"id": "CHEMBL1201568", "label": "PEGFILGRASTIM", "type": "DRG", "size": 16, "props": {"full_name": "PEGFILGRASTIM", "drug_type": "Protein", "approved": "Yes"}}, {"id": "CHEMBL1201577", "label": "CETUXIMAB", "type": "DRG", "size": 16, "props": {"full_name": "CETUXIMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL1201581", "label": "INFLIXIMAB", "type": "DRG", "size": 16, "props": {"full_name": "INFLIXIMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL1201583", "label": "BEVACIZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "BEVACIZUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL1201585", "label": "TRASTUZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "TRASTUZUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL1201666", "label": "LEPIRUDIN", "type": "DRG", "size": 16, "props": {"full_name": "LEPIRUDIN", "drug_type": "Protein", "approved": "Yes"}}, {"id": "CHEMBL1201670", "label": "SARGRAMOSTIM", "type": "DRG", "size": 16, "props": {"full_name": "SARGRAMOSTIM", "drug_type": "Protein", "approved": "Yes"}}, {"id": "CHEMBL1201733", "label": "PAZOPANIB HYDROCHLORI.", "type": "DRG", "size": 16, "props": {"full_name": "PAZOPANIB HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1201734", "label": "BENDAMUSTINE HYDROCHL.", "type": "DRG", "size": 16, "props": {"full_name": "BENDAMUSTINE HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1201746", "label": "PRALATREXATE", "type": "DRG", "size": 16, "props": {"full_name": "PRALATREXATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1201752", "label": "IXABEPILONE", "type": "DRG", "size": 16, "props": {"full_name": "IXABEPILONE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1201827", "label": "PANITUMUMAB", "type": "DRG", "size": 16, "props": {"full_name": "PANITUMUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL1201834", "label": "CANAKINUMAB", "type": "DRG", "size": 16, "props": {"full_name": "CANAKINUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL1205", "label": "NELFINAVIR MESYLATE", "type": "DRG", "size": 16, "props": {"full_name": "NELFINAVIR MESYLATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1222251", "label": "INOSITOL", "type": "DRG", "size": 16, "props": {"full_name": "INOSITOL", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1230609", "label": "FORETINIB", "type": "DRG", "size": 16, "props": {"full_name": "FORETINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1235478", "label": "PLATINUM", "type": "DRG", "size": 16, "props": {"full_name": "PLATINUM", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1237023", "label": "DENOSUMAB", "type": "DRG", "size": 16, "props": {"full_name": "DENOSUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL1256391", "label": "PIRFENIDONE", "type": "DRG", "size": 16, "props": {"full_name": "PIRFENIDONE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1256786", "label": "FORMOTEROL", "type": "DRG", "size": 16, "props": {"full_name": "FORMOTEROL", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1257030", "label": "LONIDAMINE", "type": "DRG", "size": 16, "props": {"full_name": "LONIDAMINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1336", "label": "SORAFENIB", "type": "DRG", "size": 16, "props": {"full_name": "SORAFENIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1349", "label": "VALACYCLOVIR", "type": "DRG", "size": 16, "props": {"full_name": "VALACYCLOVIR", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1351", "label": "CARBOPLATIN", "type": "DRG", "size": 16, "props": {"full_name": "CARBOPLATIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1358", "label": "FULVESTRANT", "type": "DRG", "size": 16, "props": {"full_name": "FULVESTRANT", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1370", "label": "BUDESONIDE", "type": "DRG", "size": 16, "props": {"full_name": "BUDESONIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1421", "label": "DASATINIB", "type": "DRG", "size": 16, "props": {"full_name": "DASATINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1431", "label": "METFORMIN", "type": "DRG", "size": 16, "props": {"full_name": "METFORMIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1434", "label": "MINOCYCLINE", "type": "DRG", "size": 16, "props": {"full_name": "MINOCYCLINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1535", "label": "HYDROXYCHLOROQUINE", "type": "DRG", "size": 16, "props": {"full_name": "HYDROXYCHLOROQUINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1536", "label": "ERGOCALCIFEROL", "type": "DRG", "size": 16, "props": {"full_name": "ERGOCALCIFEROL", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1567", "label": "SUNITINIB MALATE", "type": "DRG", "size": 16, "props": {"full_name": "SUNITINIB MALATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL159", "label": "VINBLASTINE", "type": "DRG", "size": 16, "props": {"full_name": "VINBLASTINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1607", "label": "TOPOTECAN HYDROCHLORI.", "type": "DRG", "size": 16, "props": {"full_name": "TOPOTECAN HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1614650", "label": "EXATECAN", "type": "DRG", "size": 16, "props": {"full_name": "EXATECAN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1614701", "label": "SELUMETINIB", "type": "DRG", "size": 16, "props": {"full_name": "SELUMETINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1622", "label": "FOLIC ACID", "type": "DRG", "size": 16, "props": {"full_name": "FOLIC ACID", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1637", "label": "GEMCITABINE HYDROCHLO.", "type": "DRG", "size": 16, "props": {"full_name": "GEMCITABINE HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1642", "label": "IMATINIB MESYLATE", "type": "DRG", "size": 16, "props": {"full_name": "IMATINIB MESYLATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1646", "label": "INDOCYANINE GREEN", "type": "DRG", "size": 16, "props": {"full_name": "INDOCYANINE GREEN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL167691", "label": "LAROMUSTINE", "type": "DRG", "size": 16, "props": {"full_name": "LAROMUSTINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1698", "label": "BUPROPION HYDROCHLORI.", "type": "DRG", "size": 16, "props": {"full_name": "BUPROPION HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL170630", "label": "ETHANE DIMETHANE SULF.", "type": "DRG", "size": 16, "props": {"full_name": "ETHANE DIMETHANE SULFONATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1743001", "label": "CIXUTUMUMAB", "type": "DRG", "size": 16, "props": {"full_name": "CIXUTUMUMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL1743006", "label": "DALOTUZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "DALOTUZUMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL1743051", "label": "ONARTUZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "ONARTUZUMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL1743260", "label": "KARENITECIN", "type": "DRG", "size": 16, "props": {"full_name": "KARENITECIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1773", "label": "CAPECITABINE", "type": "DRG", "size": 16, "props": {"full_name": "CAPECITABINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL178459", "label": "OLTIPRAZ", "type": "DRG", "size": 16, "props": {"full_name": "OLTIPRAZ", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1789844", "label": "IPILIMUMAB", "type": "DRG", "size": 16, "props": {"full_name": "IPILIMUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL1789941", "label": "RUXOLITINIB", "type": "DRG", "size": 16, "props": {"full_name": "RUXOLITINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1873475", "label": "IBRUTINIB", "type": "DRG", "size": 16, "props": {"full_name": "IBRUTINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL18901", "label": "EFAPROXIRAL", "type": "DRG", "size": 16, "props": {"full_name": "EFAPROXIRAL", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL189963", "label": "PALBOCICLIB", "type": "DRG", "size": 16, "props": {"full_name": "PALBOCICLIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL190461", "label": "CANNABIDIOL", "type": "DRG", "size": 16, "props": {"full_name": "CANNABIDIOL", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1905073", "label": "CHLORSULFAQUINOXALINE", "type": "DRG", "size": 16, "props": {"full_name": "CHLORSULFAQUINOXALINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1908360", "label": "EVEROLIMUS", "type": "DRG", "size": 16, "props": {"full_name": "EVEROLIMUS", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1947204", "label": "ALLITINIB", "type": "DRG", "size": 16, "props": {"full_name": "ALLITINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL196", "label": "ASCORBIC ACID", "type": "DRG", "size": 16, "props": {"full_name": "ASCORBIC ACID", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL1976040", "label": "ADAVOSERTIB", "type": "DRG", "size": 16, "props": {"full_name": "ADAVOSERTIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL1980825", "label": "ANTINEOPLASTON A10", "type": "DRG", "size": 16, "props": {"full_name": "ANTINEOPLASTON A10", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2017974", "label": "BUPARLISIB", "type": "DRG", "size": 16, "props": {"full_name": "BUPARLISIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2028663", "label": "DABRAFENIB", "type": "DRG", "size": 16, "props": {"full_name": "DABRAFENIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2087361", "label": "ICOTINIB", "type": "DRG", "size": 16, "props": {"full_name": "ICOTINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2103798", "label": "CEDIRANIB MALEATE", "type": "DRG", "size": 16, "props": {"full_name": "CEDIRANIB MALEATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2103875", "label": "TRAMETINIB", "type": "DRG", "size": 16, "props": {"full_name": "TRAMETINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2103879", "label": "GANETESPIB", "type": "DRG", "size": 16, "props": {"full_name": "GANETESPIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2104406", "label": "BIRICODAR DICITRATE", "type": "DRG", "size": 16, "props": {"full_name": "BIRICODAR DICITRATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2105719", "label": "DACOMITINIB", "type": "DRG", "size": 16, "props": {"full_name": "DACOMITINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2105741", "label": "TRAMETINIB DIMETHYL S.", "type": "DRG", "size": 16, "props": {"full_name": "TRAMETINIB DIMETHYL SULFOXIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2105902", "label": "BATABULIN SODIUM", "type": "DRG", "size": 16, "props": {"full_name": "BATABULIN SODIUM", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2106049", "label": "CHARCOAL, ACTIVATED", "type": "DRG", "size": 16, "props": {"full_name": "CHARCOAL, ACTIVATED", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2107143", "label": "GLUFOSFAMIDE", "type": "DRG", "size": 16, "props": {"full_name": "GLUFOSFAMIDE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2107313", "label": "BECATECARIN", "type": "DRG", "size": 16, "props": {"full_name": "BECATECARIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2107315", "label": "BELOTECAN HYDROCHLORI.", "type": "DRG", "size": 16, "props": {"full_name": "BELOTECAN HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2107319", "label": "CANFOSFAMIDE HYDROCHL.", "type": "DRG", "size": 16, "props": {"full_name": "CANFOSFAMIDE HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2107337", "label": "ENZASTAURIN HYDROCHLO.", "type": "DRG", "size": 16, "props": {"full_name": "ENZASTAURIN HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2107357", "label": "MOTESANIB DIPHOSPHATE", "type": "DRG", "size": 16, "props": {"full_name": "MOTESANIB DIPHOSPHATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2107358", "label": "OBATOCLAX MESYLATE", "type": "DRG", "size": 16, "props": {"full_name": "OBATOCLAX MESYLATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2107881", "label": "REGRAMOSTIM", "type": "DRG", "size": 16, "props": {"full_name": "REGRAMOSTIM", "drug_type": "Protein", "approved": "No"}}, {"id": "CHEMBL2108061", "label": "VOLOCIXIMAB", "type": "DRG", "size": 16, "props": {"full_name": "VOLOCIXIMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL2108359", "label": "NIMOTUZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "NIMOTUZUMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL2108442", "label": "MITUMOMAB", "type": "DRG", "size": 16, "props": {"full_name": "MITUMOMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL2108506", "label": "INTERFERON ALFA", "type": "DRG", "size": 16, "props": {"full_name": "INTERFERON ALFA", "drug_type": "Protein", "approved": "Yes"}}, {"id": "CHEMBL2108585", "label": "CONTUSUGENE LADENOVEC", "type": "DRG", "size": 16, "props": {"full_name": "CONTUSUGENE LADENOVEC", "drug_type": "Gene", "approved": "No"}}, {"id": "CHEMBL2108628", "label": "PACLITAXEL POLIGLUMEX", "type": "DRG", "size": 16, "props": {"full_name": "PACLITAXEL POLIGLUMEX", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2108658", "label": "TREMELIMUMAB", "type": "DRG", "size": 16, "props": {"full_name": "TREMELIMUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL2108702", "label": "IMETELSTAT SODIUM", "type": "DRG", "size": 16, "props": {"full_name": "IMETELSTAT SODIUM", "drug_type": "Oligonucleotide", "approved": "No"}}, {"id": "CHEMBL2108730", "label": "SARILUMAB", "type": "DRG", "size": 16, "props": {"full_name": "SARILUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL2108738", "label": "NIVOLUMAB", "type": "DRG", "size": 16, "props": {"full_name": "NIVOLUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL2108905", "label": "BCG VACCINE", "type": "DRG", "size": 16, "props": {"full_name": "BCG VACCINE", "drug_type": "Unknown", "approved": "No"}}, {"id": "CHEMBL2109204", "label": "NADROPARIN CALCIUM", "type": "DRG", "size": 16, "props": {"full_name": "NADROPARIN CALCIUM", "drug_type": "Oligosaccharide", "approved": "No"}}, {"id": "CHEMBL2109229", "label": "OBLIMERSEN SODIUM", "type": "DRG", "size": 16, "props": {"full_name": "OBLIMERSEN SODIUM", "drug_type": "Oligonucleotide", "approved": "No"}}, {"id": "CHEMBL2109321", "label": "CAROTUXIMAB", "type": "DRG", "size": 16, "props": {"full_name": "CAROTUXIMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL2109503", "label": "LMB-9", "type": "DRG", "size": 16, "props": {"full_name": "LMB-9", "drug_type": "Antibody drug conjugate", "approved": "No"}}, {"id": "CHEMBL2109506", "label": "HU3S193", "type": "DRG", "size": 16, "props": {"full_name": "HU3S193", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL2109516", "label": "SS1(DSFV)-PE38", "type": "DRG", "size": 16, "props": {"full_name": "SS1(DSFV)-PE38", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL2110563", "label": "CYANOCOBALAMIN", "type": "DRG", "size": 16, "props": {"full_name": "CYANOCOBALAMIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2110725", "label": "VINFLUNINE", "type": "DRG", "size": 16, "props": {"full_name": "VINFLUNINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2110732", "label": "DACOMITINIB ANHYDROUS", "type": "DRG", "size": 16, "props": {"full_name": "DACOMITINIB ANHYDROUS", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2111084", "label": "BELOTECAN", "type": "DRG", "size": 16, "props": {"full_name": "BELOTECAN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2111086", "label": "CANFOSFAMIDE", "type": "DRG", "size": 16, "props": {"full_name": "CANFOSFAMIDE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2111186", "label": "TALAPORFIN", "type": "DRG", "size": 16, "props": {"full_name": "TALAPORFIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL225072", "label": "PEMETREXED", "type": "DRG", "size": 16, "props": {"full_name": "PEMETREXED", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2251727", "label": "ETHYL ISOTHIOCYANATE", "type": "DRG", "size": 16, "props": {"full_name": "ETHYL ISOTHIOCYANATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL231616", "label": "TRIAPINE", "type": "DRG", "size": 16, "props": {"full_name": "TRIAPINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL235191", "label": "TACEDINALINE", "type": "DRG", "size": 16, "props": {"full_name": "TACEDINALINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL2360464", "label": "PEMETREXED DISODIUM", "type": "DRG", "size": 16, "props": {"full_name": "PEMETREXED DISODIUM", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2364655", "label": "EVOLOCUMAB", "type": "DRG", "size": 16, "props": {"full_name": "EVOLOCUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL238071", "label": "VINDESINE", "type": "DRG", "size": 16, "props": {"full_name": "VINDESINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL2387080", "label": "TASELISIB", "type": "DRG", "size": 16, "props": {"full_name": "TASELISIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL24828", "label": "VANDETANIB", "type": "DRG", "size": 16, "props": {"full_name": "VANDETANIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL272980", "label": "MOCETINOSTAT", "type": "DRG", "size": 16, "props": {"full_name": "MOCETINOSTAT", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL274070", "label": "9-AMINOCAMPTOTHECIN", "type": "DRG", "size": 16, "props": {"full_name": "9-AMINOCAMPTOTHECIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL274654", "label": "ORANTINIB", "type": "DRG", "size": 16, "props": {"full_name": "ORANTINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL276832", "label": "HYDRALAZINE", "type": "DRG", "size": 16, "props": {"full_name": "HYDRALAZINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL279785", "label": "MARIMASTAT", "type": "DRG", "size": 16, "props": {"full_name": "MARIMASTAT", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL284616", "label": "CHLOROGENIC ACID", "type": "DRG", "size": 16, "props": {"full_name": "CHLOROGENIC ACID", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL289228", "label": "TIPIFARNIB", "type": "DRG", "size": 16, "props": {"full_name": "TIPIFARNIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL297453", "label": "EPIGALOCATECHIN GALLA.", "type": "DRG", "size": 16, "props": {"full_name": "EPIGALOCATECHIN GALLATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3", "label": "NICOTINE", "type": "DRG", "size": 16, "props": {"full_name": "NICOTINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL300138", "label": "ENZASTAURIN", "type": "DRG", "size": 16, "props": {"full_name": "ENZASTAURIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3039544", "label": "TECEMOTIDE", "type": "DRG", "size": 16, "props": {"full_name": "TECEMOTIDE", "drug_type": "Protein", "approved": "No"}}, {"id": "CHEMBL306043", "label": "GOLD SODIUM THIOMALATE", "type": "DRG", "size": 16, "props": {"full_name": "GOLD SODIUM THIOMALATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL306823", "label": "SODIUM DICHLOROACETATE", "type": "DRG", "size": 16, "props": {"full_name": "SODIUM DICHLOROACETATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3137343", "label": "PEMBROLIZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "PEMBROLIZUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL3186534", "label": "RIVOCERANIB", "type": "DRG", "size": 16, "props": {"full_name": "RIVOCERANIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3187723", "label": "BINIMETINIB", "type": "DRG", "size": 16, "props": {"full_name": "BINIMETINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3188267", "label": "CAPMATINIB", "type": "DRG", "size": 16, "props": {"full_name": "CAPMATINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3244648", "label": "METHOTREXATE SODIUM", "type": "DRG", "size": 16, "props": {"full_name": "METHOTREXATE SODIUM", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL325041", "label": "BORTEZOMIB", "type": "DRG", "size": 16, "props": {"full_name": "BORTEZOMIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3301587", "label": "DURVALUMAB", "type": "DRG", "size": 16, "props": {"full_name": "DURVALUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL3301610", "label": "ABEMACICLIB", "type": "DRG", "size": 16, "props": {"full_name": "ABEMACICLIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3334567", "label": "SAVOLITINIB", "type": "DRG", "size": 16, "props": {"full_name": "SAVOLITINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3353410", "label": "OSIMERTINIB", "type": "DRG", "size": 16, "props": {"full_name": "OSIMERTINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL336296", "label": "URIDINE TRIPHOSPHATE", "type": "DRG", "size": 16, "props": {"full_name": "URIDINE TRIPHOSPHATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL34259", "label": "METHOTREXATE", "type": "DRG", "size": 16, "props": {"full_name": "METHOTREXATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL34412", "label": "LOMETREXOL", "type": "DRG", "size": 16, "props": {"full_name": "LOMETREXOL", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL348475", "label": "TARIQUIDAR", "type": "DRG", "size": 16, "props": {"full_name": "TARIQUIDAR", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL350775", "label": "BIRICODAR", "type": "DRG", "size": 16, "props": {"full_name": "BIRICODAR", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3544907", "label": "PICOPLATIN", "type": "DRG", "size": 16, "props": {"full_name": "PICOPLATIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3544910", "label": "MOTEXAFIN GADOLINIUM", "type": "DRG", "size": 16, "props": {"full_name": "MOTEXAFIN GADOLINIUM", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3544916", "label": "GUADECITABINE", "type": "DRG", "size": 16, "props": {"full_name": "GUADECITABINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3544993", "label": "AGLATIMAGENE BESADENO.", "type": "DRG", "size": 16, "props": {"full_name": "AGLATIMAGENE BESADENOVEC", "drug_type": "Gene", "approved": "No"}}, {"id": "CHEMBL3545063", "label": "OSIMERTINIB MESYLATE", "type": "DRG", "size": 16, "props": {"full_name": "OSIMERTINIB MESYLATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3545252", "label": "DOCETAXEL", "type": "DRG", "size": 16, "props": {"full_name": "DOCETAXEL", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3545369", "label": "EPACADOSTAT", "type": "DRG", "size": 16, "props": {"full_name": "EPACADOSTAT", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3545414", "label": "RIVOCERANIB MESYLATE", "type": "DRG", "size": 16, "props": {"full_name": "RIVOCERANIB MESYLATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL359744", "label": "DOXORUBICIN HYDROCHLO.", "type": "DRG", "size": 16, "props": {"full_name": "DOXORUBICIN HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3622820", "label": "ITACITINIB", "type": "DRG", "size": 16, "props": {"full_name": "ITACITINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3707227", "label": "ATEZOLIZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "ATEZOLIZUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL377559", "label": "RETASPIMYCIN HYDROCHL.", "type": "DRG", "size": 16, "props": {"full_name": "RETASPIMYCIN HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3775741", "label": "AMMONIUM TETRATHIOMOL.", "type": "DRG", "size": 16, "props": {"full_name": "AMMONIUM TETRATHIOMOLYBDATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL378544", "label": "VINBLASTINE SULFATE", "type": "DRG", "size": 16, "props": {"full_name": "VINBLASTINE SULFATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3787344", "label": "NAZARTINIB", "type": "DRG", "size": 16, "props": {"full_name": "NAZARTINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL38", "label": "TRETINOIN", "type": "DRG", "size": 16, "props": {"full_name": "TRETINOIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL382300", "label": "ORTATAXEL", "type": "DRG", "size": 16, "props": {"full_name": "ORTATAXEL", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3833367", "label": "SATRAPLATIN", "type": "DRG", "size": 16, "props": {"full_name": "SATRAPLATIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL384200", "label": "RGI-7000", "type": "DRG", "size": 16, "props": {"full_name": "RGI-7000", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL384467", "label": "DEXAMETHASONE", "type": "DRG", "size": 16, "props": {"full_name": "DEXAMETHASONE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL39677", "label": "ACRIDINE", "type": "DRG", "size": 16, "props": {"full_name": "ACRIDINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3989512", "label": "SOBLIDOTIN", "type": "DRG", "size": 16, "props": {"full_name": "SOBLIDOTIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3989514", "label": "IRINOTECAN HYDROCHLOR.", "type": "DRG", "size": 16, "props": {"full_name": "IRINOTECAN HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL3989727", "label": "VITAMIN E", "type": "DRG", "size": 16, "props": {"full_name": "VITAMIN E", "drug_type": "Unknown", "approved": "Yes"}}, {"id": "CHEMBL3989759", "label": "EXATECAN MESYLATE", "type": "DRG", "size": 16, "props": {"full_name": "EXATECAN MESYLATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL3989798", "label": "FORMOTEROL FUMARATE", "type": "DRG", "size": 16, "props": {"full_name": "FORMOTEROL FUMARATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL408194", "label": "OBATOCLAX", "type": "DRG", "size": 16, "props": {"full_name": "OBATOCLAX", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL4113131", "label": "ENSARTINIB", "type": "DRG", "size": 16, "props": {"full_name": "ENSARTINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL413", "label": "SIROLIMUS", "type": "DRG", "size": 16, "props": {"full_name": "SIROLIMUS", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL414804", "label": "OXALIPLATIN", "type": "DRG", "size": 16, "props": {"full_name": "OXALIPLATIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL417", "label": "EPIRUBICIN", "type": "DRG", "size": 16, "props": {"full_name": "EPIRUBICIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL427", "label": "MECHLORETHAMINE", "type": "DRG", "size": 16, "props": {"full_name": "MECHLORETHAMINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL4285883", "label": "OLEANDRIN", "type": "DRG", "size": 16, "props": {"full_name": "OLEANDRIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL428647", "label": "PACLITAXEL", "type": "DRG", "size": 16, "props": {"full_name": "PACLITAXEL", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL4297163", "label": "MUPARFOSTAT", "type": "DRG", "size": 16, "props": {"full_name": "MUPARFOSTAT", "drug_type": "Oligosaccharide", "approved": "No"}}, {"id": "CHEMBL4297208", "label": "TRIPLATIN TETRANITRATE", "type": "DRG", "size": 16, "props": {"full_name": "TRIPLATIN TETRANITRATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL4297258", "label": "FIRMONERTINIB", "type": "DRG", "size": 16, "props": {"full_name": "FIRMONERTINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL4297565", "label": "CERTOLIZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "CERTOLIZUMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL4297571", "label": "PENPULIMAB", "type": "DRG", "size": 16, "props": {"full_name": "PENPULIMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL4297715", "label": "CAMRELIZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "CAMRELIZUMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL4297723", "label": "CEMIPLIMAB", "type": "DRG", "size": 16, "props": {"full_name": "CEMIPLIMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL4297747", "label": "ENDOSTATIN", "type": "DRG", "size": 16, "props": {"full_name": "ENDOSTATIN", "drug_type": "Unknown", "approved": "No"}}, {"id": "CHEMBL4297817", "label": "QS-21", "type": "DRG", "size": 16, "props": {"full_name": "QS-21", "drug_type": "Unknown", "approved": "No"}}, {"id": "CHEMBL4297829", "label": "SINTILIMAB", "type": "DRG", "size": 16, "props": {"full_name": "SINTILIMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL4297831", "label": "SPARTALIZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "SPARTALIZUMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL4297840", "label": "TISLELIZUMAB", "type": "DRG", "size": 16, "props": {"full_name": "TISLELIZUMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL4297843", "label": "TORIPALIMAB", "type": "DRG", "size": 16, "props": {"full_name": "TORIPALIMAB", "drug_type": "Antibody", "approved": "Yes"}}, {"id": "CHEMBL4297939", "label": "DATOPOTAMAB DERUXTECAN", "type": "DRG", "size": 16, "props": {"full_name": "DATOPOTAMAB DERUXTECAN", "drug_type": "Antibody drug conjugate", "approved": "No"}}, {"id": "CHEMBL4297946", "label": "ENDOSTATIN, N-TERMINA.", "type": "DRG", "size": 16, "props": {"full_name": "ENDOSTATIN, N-TERMINAL-MGGSHHHHH", "drug_type": "Unknown", "approved": "No"}}, {"id": "CHEMBL4298024", "label": "BINTRAFUSP ALFA", "type": "DRG", "size": 16, "props": {"full_name": "BINTRAFUSP ALFA", "drug_type": "Protein", "approved": "No"}}, {"id": "CHEMBL4301078", "label": "AMMONIUM TETRATHIOMOL.", "type": "DRG", "size": 16, "props": {"full_name": "AMMONIUM TETRATHIOMOLYBDATE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL4303201", "label": "CATEQUENTINIB", "type": "DRG", "size": 16, "props": {"full_name": "CATEQUENTINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL4303214", "label": "FRUQUINTINIB", "type": "DRG", "size": 16, "props": {"full_name": "FRUQUINTINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL4303669", "label": "ZOLEDRONIC ACID", "type": "DRG", "size": 16, "props": {"full_name": "ZOLEDRONIC ACID", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL44657", "label": "ETOPOSIDE", "type": "DRG", "size": 16, "props": {"full_name": "ETOPOSIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL449158", "label": "BRYOSTATIN 1", "type": "DRG", "size": 16, "props": {"full_name": "BRYOSTATIN 1", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL4535757", "label": "SOTORASIB", "type": "DRG", "size": 16, "props": {"full_name": "SOTORASIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL4558324", "label": "LAZERTINIB", "type": "DRG", "size": 16, "props": {"full_name": "LAZERTINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL4594308", "label": "OLVIMULOGENE NANIVACI.", "type": "DRG", "size": 16, "props": {"full_name": "OLVIMULOGENE NANIVACIREPVEC", "drug_type": "Gene", "approved": "No"}}, {"id": "CHEMBL4594350", "label": "ADAGRASIB", "type": "DRG", "size": 16, "props": {"full_name": "ADAGRASIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL4594456", "label": "CADONILIMAB", "type": "DRG", "size": 16, "props": {"full_name": "CADONILIMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL4594483", "label": "NY-ESO-1", "type": "DRG", "size": 16, "props": {"full_name": "NY-ESO-1", "drug_type": "Unknown", "approved": "No"}}, {"id": "CHEMBL4650400", "label": "INCOMPLETE FREUND'S A.", "type": "DRG", "size": 16, "props": {"full_name": "INCOMPLETE FREUND'S ADJUVANT", "drug_type": "Unknown", "approved": "No"}}, {"id": "CHEMBL4650473", "label": "IBI-939", "type": "DRG", "size": 16, "props": {"full_name": "IBI-939", "drug_type": "Unknown", "approved": "No"}}, {"id": "CHEMBL467", "label": "HYDROXYUREA", "type": "DRG", "size": 16, "props": {"full_name": "HYDROXYUREA", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL468", "label": "THALIDOMIDE", "type": "DRG", "size": 16, "props": {"full_name": "THALIDOMIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL476", "label": "DACARBAZINE", "type": "DRG", "size": 16, "props": {"full_name": "DACARBAZINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL4761468", "label": "AUMOLERTINIB", "type": "DRG", "size": 16, "props": {"full_name": "AUMOLERTINIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL477772", "label": "PAZOPANIB", "type": "DRG", "size": 16, "props": {"full_name": "PAZOPANIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL481", "label": "IRINOTECAN", "type": "DRG", "size": 16, "props": {"full_name": "IRINOTECAN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL481958", "label": "AMRUBICIN HYDROCHLORI.", "type": "DRG", "size": 16, "props": {"full_name": "AMRUBICIN HYDROCHLORIDE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL483158", "label": "ALISERTIB", "type": "DRG", "size": 16, "props": {"full_name": "ALISERTIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL483254", "label": "PANOBINOSTAT", "type": "DRG", "size": 16, "props": {"full_name": "PANOBINOSTAT", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL487253", "label": "BENDAMUSTINE", "type": "DRG", "size": 16, "props": {"full_name": "BENDAMUSTINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL48802", "label": "SULFORAPHANE", "type": "DRG", "size": 16, "props": {"full_name": "SULFORAPHANE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL488025", "label": "EXISULIND", "type": "DRG", "size": 16, "props": {"full_name": "EXISULIND", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL491473", "label": "CEDIRANIB", "type": "DRG", "size": 16, "props": {"full_name": "CEDIRANIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL494", "label": "ILOPROST", "type": "DRG", "size": 16, "props": {"full_name": "ILOPROST", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL500853", "label": "HPPH", "type": "DRG", "size": 16, "props": {"full_name": "HPPH", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL501867", "label": "VINCRISTINE SULFATE", "type": "DRG", "size": 16, "props": {"full_name": "VINCRISTINE SULFATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL502835", "label": "NINTEDANIB", "type": "DRG", "size": 16, "props": {"full_name": "NINTEDANIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL50882", "label": "TIRAPAZAMINE", "type": "DRG", "size": 16, "props": {"full_name": "TIRAPAZAMINE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL5095352", "label": "TIFCEMALIMAB", "type": "DRG", "size": 16, "props": {"full_name": "TIFCEMALIMAB", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL5095383", "label": "RETLIRAFUSP ALFA", "type": "DRG", "size": 16, "props": {"full_name": "RETLIRAFUSP ALFA", "drug_type": "Protein", "approved": "No"}}, {"id": "CHEMBL514", "label": "LOMUSTINE", "type": "DRG", "size": 16, "props": {"full_name": "LOMUSTINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL521686", "label": "OLAPARIB", "type": "DRG", "size": 16, "props": {"full_name": "OLAPARIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL5314988", "label": "KEYHOLE LIMPET HEMOCY.", "type": "DRG", "size": 16, "props": {"full_name": "KEYHOLE LIMPET HEMOCYANIN", "drug_type": "Protein", "approved": "No"}}, {"id": "CHEMBL5315042", "label": "BENMELSTOBART", "type": "DRG", "size": 16, "props": {"full_name": "BENMELSTOBART", "drug_type": "Antibody", "approved": "No"}}, {"id": "CHEMBL53463", "label": "DOXORUBICIN", "type": "DRG", "size": 16, "props": {"full_name": "DOXORUBICIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL535", "label": "SUNITINIB", "type": "DRG", "size": 16, "props": {"full_name": "SUNITINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL538943", "label": "VINORELBINE TARTRATE", "type": "DRG", "size": 16, "props": {"full_name": "VINORELBINE TARTRATE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL547", "label": "ISOTRETINOIN", "type": "DRG", "size": 16, "props": {"full_name": "ISOTRETINOIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL5483015", "label": "ARSENIC TRIOXIDE", "type": "DRG", "size": 16, "props": {"full_name": "ARSENIC TRIOXIDE", "drug_type": "Unknown", "approved": "Yes"}}, {"id": "CHEMBL553", "label": "ERLOTINIB", "type": "DRG", "size": 16, "props": {"full_name": "ERLOTINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL553025", "label": "VINORELBINE", "type": "DRG", "size": 16, "props": {"full_name": "VINORELBINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL572881", "label": "MOTESANIB", "type": "DRG", "size": 16, "props": {"full_name": "MOTESANIB", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL584", "label": "NELFINAVIR", "type": "DRG", "size": 16, "props": {"full_name": "NELFINAVIR", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL595", "label": "PIOGLITAZONE", "type": "DRG", "size": 16, "props": {"full_name": "PIOGLITAZONE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL601719", "label": "CRIZOTINIB", "type": "DRG", "size": 16, "props": {"full_name": "CRIZOTINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL635", "label": "PREDNISONE", "type": "DRG", "size": 16, "props": {"full_name": "PREDNISONE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL64391", "label": "ITRACONAZOLE", "type": "DRG", "size": 16, "props": {"full_name": "ITRACONAZOLE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL657", "label": "DIPHENHYDRAMINE", "type": "DRG", "size": 16, "props": {"full_name": "DIPHENHYDRAMINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL67279", "label": "TALABOSTAT", "type": "DRG", "size": 16, "props": {"full_name": "TALABOSTAT", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL690", "label": "PRAVASTATIN SODIUM", "type": "DRG", "size": 16, "props": {"full_name": "PRAVASTATIN SODIUM", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL71263", "label": "VADIMEZAN", "type": "DRG", "size": 16, "props": {"full_name": "VADIMEZAN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL730", "label": "NITROGLYCERIN", "type": "DRG", "size": 16, "props": {"full_name": "NITROGLYCERIN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL7301", "label": "FENRETINIDE", "type": "DRG", "size": 16, "props": {"full_name": "FENRETINIDE", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL742", "label": "KETAMINE", "type": "DRG", "size": 16, "props": {"full_name": "KETAMINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL75094", "label": "PRINOMASTAT", "type": "DRG", "size": 16, "props": {"full_name": "PRINOMASTAT", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL76222", "label": "REBIMASTAT", "type": "DRG", "size": 16, "props": {"full_name": "REBIMASTAT", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL77305", "label": "RUBITECAN", "type": "DRG", "size": 16, "props": {"full_name": "RUBITECAN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL79", "label": "LIDOCAINE", "type": "DRG", "size": 16, "props": {"full_name": "LIDOCAINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL79280", "label": "BATABULIN", "type": "DRG", "size": 16, "props": {"full_name": "BATABULIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL810", "label": "TEMOZOLOMIDE", "type": "DRG", "size": 16, "props": {"full_name": "TEMOZOLOMIDE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL837", "label": "7-ETHYL-10-HYDROXYCAM.", "type": "DRG", "size": 16, "props": {"full_name": "7-ETHYL-10-HYDROXYCAMPTOTHECIN", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL84", "label": "TOPOTECAN", "type": "DRG", "size": 16, "props": {"full_name": "TOPOTECAN", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL88", "label": "CYCLOPHOSPHAMIDE ANHY.", "type": "DRG", "size": 16, "props": {"full_name": "CYCLOPHOSPHAMIDE ANHYDROUS", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL888", "label": "GEMCITABINE", "type": "DRG", "size": 16, "props": {"full_name": "GEMCITABINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL894", "label": "BUPROPION", "type": "DRG", "size": 16, "props": {"full_name": "BUPROPION", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL90555", "label": "VINCRISTINE", "type": "DRG", "size": 16, "props": {"full_name": "VINCRISTINE", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL92", "label": "DOCETAXEL ANHYDROUS", "type": "DRG", "size": 16, "props": {"full_name": "DOCETAXEL ANHYDROUS", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL924", "label": "ZOLEDRONIC ACID ANHYD.", "type": "DRG", "size": 16, "props": {"full_name": "ZOLEDRONIC ACID ANHYDROUS", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL93", "label": "ZILEUTON", "type": "DRG", "size": 16, "props": {"full_name": "ZILEUTON", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL939", "label": "GEFITINIB", "type": "DRG", "size": 16, "props": {"full_name": "GEFITINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL941", "label": "IMATINIB", "type": "DRG", "size": 16, "props": {"full_name": "IMATINIB", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL96172", "label": "EPOTHILONE D", "type": "DRG", "size": 16, "props": {"full_name": "EPOTHILONE D", "drug_type": "Small molecule", "approved": "No"}}, {"id": "CHEMBL975", "label": "MESNA", "type": "DRG", "size": 16, "props": {"full_name": "MESNA", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "CHEMBL98", "label": "VORINOSTAT", "type": "DRG", "size": 16, "props": {"full_name": "VORINOSTAT", "drug_type": "Small molecule", "approved": "Yes"}}, {"id": "ENSG00000002016", "label": "RAD52", "type": "GEN", "size": 14, "props": {"full_name": "RAD52 homolog, DNA repair protein", "biotype": "protein_coding"}}, {"id": "ENSG00000041357", "label": "PSMA4", "type": "GEN", "size": 14, "props": {"full_name": "proteasome 20S subunit alpha 4", "biotype": "protein_coding"}}, {"id": "ENSG00000049656", "label": "CLPTM1L", "type": "GEN", "size": 14, "props": {"full_name": "CLPTM1 like", "biotype": "protein_coding"}}, {"id": "ENSG00000055130", "label": "CUL1", "type": "GEN", "size": 14, "props": {"full_name": "cullin 1", "biotype": "protein_coding"}}, {"id": "ENSG00000060069", "label": "CTDP1", "type": "GEN", "size": 14, "props": {"full_name": "CTD phosphatase subunit 1", "biotype": "protein_coding"}}, {"id": "ENSG00000060237", "label": "WNK1", "type": "GEN", "size": 14, "props": {"full_name": "WNK lysine deficient protein kinase 1", "biotype": "protein_coding"}}, {"id": "ENSG00000067369", "label": "TP53BP1", "type": "GEN", "size": 14, "props": {"full_name": "tumor protein p53 binding protein 1", "biotype": "protein_coding"}}, {"id": "ENSG00000080644", "label": "CHRNA3", "type": "GEN", "size": 14, "props": {"full_name": "cholinergic receptor nicotinic alpha 3 subunit", "biotype": "protein_coding"}}, {"id": "ENSG00000082805", "label": "ERC1", "type": "GEN", "size": 14, "props": {"full_name": "ELKS/RAB6-interacting/CAST family member 1", "biotype": "protein_coding"}}, {"id": "ENSG00000083312", "label": "TNPO1", "type": "GEN", "size": 14, "props": {"full_name": "transportin 1", "biotype": "protein_coding"}}, {"id": "ENSG00000099810", "label": "MTAP", "type": "GEN", "size": 14, "props": {"full_name": "methylthioadenosine phosphorylase", "biotype": "protein_coding"}}, {"id": "ENSG00000106462", "label": "EZH2", "type": "GEN", "size": 14, "props": {"full_name": "enhancer of zeste 2 polycomb repressive complex 2 subunit", "biotype": "protein_coding"}}, {"id": "ENSG00000115866", "label": "DARS1", "type": "GEN", "size": 14, "props": {"full_name": "aspartyl-tRNA synthetase 1", "biotype": "protein_coding"}}, {"id": "ENSG00000117971", "label": "CHRNB4", "type": "GEN", "size": 14, "props": {"full_name": "cholinergic receptor nicotinic beta 4 subunit", "biotype": "protein_coding"}}, {"id": "ENSG00000121966", "label": "CXCR4", "type": "GEN", "size": 14, "props": {"full_name": "C-X-C motif chemokine receptor 4", "biotype": "protein_coding"}}, {"id": "ENSG00000136381", "label": "IREB2", "type": "GEN", "size": 14, "props": {"full_name": "iron responsive element binding protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000136999", "label": "CCN3", "type": "GEN", "size": 14, "props": {"full_name": "cellular communication network factor 3", "biotype": "protein_coding"}}, {"id": "ENSG00000137822", "label": "TUBGCP4", "type": "GEN", "size": 14, "props": {"full_name": "tubulin gamma complex component 4", "biotype": "protein_coding"}}, {"id": "ENSG00000139597", "label": "N4BP2L1", "type": "GEN", "size": 14, "props": {"full_name": "NEDD4 binding protein 2 like 1", "biotype": "protein_coding"}}, {"id": "ENSG00000139618", "label": "BRCA2", "type": "GEN", "size": 14, "props": {"full_name": "BRCA2 DNA repair associated", "biotype": "protein_coding"}}, {"id": "ENSG00000140265", "label": "ZSCAN29", "type": "GEN", "size": 14, "props": {"full_name": "zinc finger and SCAN domain containing 29", "biotype": "protein_coding"}}, {"id": "ENSG00000142661", "label": "MYOM3", "type": "GEN", "size": 14, "props": {"full_name": "myomesin 3", "biotype": "protein_coding"}}, {"id": "ENSG00000144229", "label": "THSD7B", "type": "GEN", "size": 14, "props": {"full_name": "thrombospondin type 1 domain containing 7B", "biotype": "protein_coding"}}, {"id": "ENSG00000147676", "label": "MAL2", "type": "GEN", "size": 14, "props": {"full_name": "mal, T cell differentiation protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000157107", "label": "FCHO2", "type": "GEN", "size": 14, "props": {"full_name": "FCH and mu domain containing endocytic adaptor 2", "biotype": "protein_coding"}}, {"id": "ENSG00000164362", "label": "TERT", "type": "GEN", "size": 14, "props": {"full_name": "telomerase reverse transcriptase", "biotype": "protein_coding"}}, {"id": "ENSG00000166963", "label": "MAP1A", "type": "GEN", "size": 14, "props": {"full_name": "microtubule associated protein 1A", "biotype": "protein_coding"}}, {"id": "ENSG00000168803", "label": "MAPDA", "type": "GEN", "size": 14, "props": {"full_name": "N6-Methyl-AMP deaminase", "biotype": "protein_coding"}}, {"id": "ENSG00000169684", "label": "CHRNA5", "type": "GEN", "size": 14, "props": {"full_name": "cholinergic receptor nicotinic alpha 5 subunit", "biotype": "protein_coding"}}, {"id": "ENSG00000170279", "label": "C7orf33", "type": "GEN", "size": 14, "props": {"full_name": "chromosome 7 open reading frame 33", "biotype": "protein_coding"}}, {"id": "ENSG00000174469", "label": "CNTNAP2", "type": "GEN", "size": 14, "props": {"full_name": "contactin associated protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000177468", "label": "OLIG3", "type": "GEN", "size": 14, "props": {"full_name": "oligodendrocyte transcription factor 3", "biotype": "protein_coding"}}, {"id": "ENSG00000178177", "label": "LCORL", "type": "GEN", "size": 14, "props": {"full_name": "ligand dependent nuclear receptor corepressor like", "biotype": "protein_coding"}}, {"id": "ENSG00000188266", "label": "HYKK", "type": "GEN", "size": 14, "props": {"full_name": "hydroxylysine kinase", "biotype": "protein_coding"}}, {"id": "ENSG00000255974", "label": "CYP2A6", "type": "GEN", "size": 14, "props": {"full_name": "cytochrome P450 family 2 subfamily A member 6", "biotype": "protein_coding"}}, {"id": "ENSG00000146648", "label": "EGFR", "type": "GEN", "size": 14, "props": {"full_name": "epidermal growth factor receptor", "biotype": "protein_coding"}}, {"id": "ENSG00000000003", "label": "TSPAN6", "type": "GEN", "size": 14, "props": {"full_name": "tetraspanin 6", "biotype": "protein_coding"}}, {"id": "ENSG00000000005", "label": "TNMD", "type": "GEN", "size": 14, "props": {"full_name": "tenomodulin", "biotype": "protein_coding"}}, {"id": "ENSG00000000460", "label": "FIRRM", "type": "GEN", "size": 14, "props": {"full_name": "FIGNL1 interacting regulator of recombination and mitosis", "biotype": "protein_coding"}}, {"id": "ENSG00000000938", "label": "FGR", "type": "GEN", "size": 14, "props": {"full_name": "FGR proto-oncogene, Src family tyrosine kinase", "biotype": "protein_coding"}}, {"id": "ENSG00000000971", "label": "CFH", "type": "GEN", "size": 14, "props": {"full_name": "complement factor H", "biotype": "protein_coding"}}, {"id": "ENSG00000001036", "label": "FUCA2", "type": "GEN", "size": 14, "props": {"full_name": "alpha-L-fucosidase 2", "biotype": "protein_coding"}}, {"id": "ENSG00000001084", "label": "GCLC", "type": "GEN", "size": 14, "props": {"full_name": "glutamate-cysteine ligase catalytic subunit", "biotype": "protein_coding"}}, {"id": "ENSG00000001167", "label": "NFYA", "type": "GEN", "size": 14, "props": {"full_name": "nuclear transcription factor Y subunit alpha", "biotype": "protein_coding"}}, {"id": "ENSG00000001497", "label": "LAS1L", "type": "GEN", "size": 14, "props": {"full_name": "LAS1 like ribosome biogenesis factor", "biotype": "protein_coding"}}, {"id": "ENSG00000001561", "label": "ENPP4", "type": "GEN", "size": 14, "props": {"full_name": "ectonucleotide pyrophosphatase/phosphodiesterase 4", "biotype": "protein_coding"}}, {"id": "ENSG00000001617", "label": "SEMA3F", "type": "GEN", "size": 14, "props": {"full_name": "semaphorin 3F", "biotype": "protein_coding"}}, {"id": "ENSG00000001626", "label": "CFTR", "type": "GEN", "size": 14, "props": {"full_name": "CF transmembrane conductance regulator", "biotype": "protein_coding"}}, {"id": "ENSG00000001629", "label": "ANKIB1", "type": "GEN", "size": 14, "props": {"full_name": "ankyrin repeat and IBR domain containing 1", "biotype": "protein_coding"}}, {"id": "ENSG00000001630", "label": "CYP51A1", "type": "GEN", "size": 14, "props": {"full_name": "cytochrome P450 family 51 subfamily A member 1", "biotype": "protein_coding"}}, {"id": "ENSG00000001631", "label": "KRIT1", "type": "GEN", "size": 14, "props": {"full_name": "KRIT1 ankyrin repeat containing", "biotype": "protein_coding"}}, {"id": "ENSG00000002330", "label": "BAD", "type": "GEN", "size": 14, "props": {"full_name": "BCL2 associated agonist of cell death", "biotype": "protein_coding"}}, {"id": "ENSG00000002549", "label": "LAP3", "type": "GEN", "size": 14, "props": {"full_name": "leucine aminopeptidase 3", "biotype": "protein_coding"}}, {"id": "ENSG00000002586", "label": "CD99", "type": "GEN", "size": 14, "props": {"full_name": "CD99 molecule (Xg blood group)", "biotype": "protein_coding"}}, {"id": "ENSG00000002587", "label": "HS3ST1", "type": "GEN", "size": 14, "props": {"full_name": "heparan sulfate-glucosamine 3-sulfotransferase 1", "biotype": "protein_coding"}}, {"id": "ENSG00000002726", "label": "AOC1", "type": "GEN", "size": 14, "props": {"full_name": "amine oxidase copper containing 1", "biotype": "protein_coding"}}, {"id": "ENSG00000002745", "label": "WNT16", "type": "GEN", "size": 14, "props": {"full_name": "Wnt family member 16", "biotype": "protein_coding"}}, {"id": "ENSG00000002746", "label": "HECW1", "type": "GEN", "size": 14, "props": {"full_name": "HECT, C2 and WW domain containing E3 ubiquitin protein ligase 1", "biotype": "protein_coding"}}, {"id": "ENSG00000002822", "label": "MAD1L1", "type": "GEN", "size": 14, "props": {"full_name": "mitotic arrest deficient 1 like 1", "biotype": "protein_coding"}}, {"id": "ENSG00000002834", "label": "LASP1", "type": "GEN", "size": 14, "props": {"full_name": "LIM and SH3 protein 1", "biotype": "protein_coding"}}, {"id": "ENSG00000002933", "label": "TMEM176A", "type": "GEN", "size": 14, "props": {"full_name": "transmembrane protein 176A", "biotype": "protein_coding"}}, {"id": "ENSG00000003056", "label": "M6PR", "type": "GEN", "size": 14, "props": {"full_name": "mannose-6-phosphate receptor, cation dependent", "biotype": "protein_coding"}}, {"id": "ENSG00000003096", "label": "KLHL13", "type": "GEN", "size": 14, "props": {"full_name": "kelch like family member 13", "biotype": "protein_coding"}}, {"id": "ENSG00000003137", "label": "CYP26B1", "type": "GEN", "size": 14, "props": {"full_name": "cytochrome P450 family 26 subfamily B member 1", "biotype": "protein_coding"}}, {"id": "ENSG00000003147", "label": "ICA1", "type": "GEN", "size": 14, "props": {"full_name": "islet cell autoantigen 1", "biotype": "protein_coding"}}, {"id": "ENSG00000003249", "label": "DBNDD1", "type": "GEN", "size": 14, "props": {"full_name": "dysbindin domain containing 1", "biotype": "protein_coding"}}, {"id": "ENSG00000003393", "label": "ALS2", "type": "GEN", "size": 14, "props": {"full_name": "alsin Rho guanine nucleotide exchange factor ALS2", "biotype": "protein_coding"}}, {"id": "ENSG00000003400", "label": "CASP10", "type": "GEN", "size": 14, "props": {"full_name": "caspase 10", "biotype": "protein_coding"}}, {"id": "ENSG00000003402", "label": "CFLAR", "type": "GEN", "size": 14, "props": {"full_name": "CASP8 and FADD like apoptosis regulator", "biotype": "protein_coding"}}, {"id": "ENSG00000003436", "label": "TFPI", "type": "GEN", "size": 14, "props": {"full_name": "tissue factor pathway inhibitor", "biotype": "protein_coding"}}, {"id": "ENSG00000003756", "label": "RBM5", "type": "GEN", "size": 14, "props": {"full_name": "RNA binding motif protein 5", "biotype": "protein_coding"}}, {"id": "ENSG00000003989", "label": "SLC7A2", "type": "GEN", "size": 14, "props": {"full_name": "solute carrier family 7 member 2", "biotype": "protein_coding"}}, {"id": "ENSG00000004139", "label": "SARM1", "type": "GEN", "size": 14, "props": {"full_name": "sterile alpha and TIR motif containing 1", "biotype": "protein_coding"}}, {"id": "ENSG00000004142", "label": "POLDIP2", "type": "GEN", "size": 14, "props": {"full_name": "DNA polymerase delta interacting protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000004399", "label": "PLXND1", "type": "GEN", "size": 14, "props": {"full_name": "plexin D1", "biotype": "protein_coding"}}, {"id": "ENSG00000004455", "label": "AK2", "type": "GEN", "size": 14, "props": {"full_name": "adenylate kinase 2", "biotype": "protein_coding"}}, {"id": "ENSG00000004468", "label": "CD38", "type": "GEN", "size": 14, "props": {"full_name": "CD38 molecule", "biotype": "protein_coding"}}, {"id": "ENSG00000004478", "label": "FKBP4", "type": "GEN", "size": 14, "props": {"full_name": "FKBP prolyl isomerase 4", "biotype": "protein_coding"}}, {"id": "ENSG00000004487", "label": "KDM1A", "type": "GEN", "size": 14, "props": {"full_name": "lysine demethylase 1A", "biotype": "protein_coding"}}, {"id": "ENSG00000004534", "label": "RBM6", "type": "GEN", "size": 14, "props": {"full_name": "RNA binding motif protein 6", "biotype": "protein_coding"}}, {"id": "ENSG00000004660", "label": "CAMKK1", "type": "GEN", "size": 14, "props": {"full_name": "calcium/calmodulin dependent protein kinase kinase 1", "biotype": "protein_coding"}}, {"id": "ENSG00000004700", "label": "RECQL", "type": "GEN", "size": 14, "props": {"full_name": "RecQ like helicase", "biotype": "protein_coding"}}, {"id": "ENSG00000004776", "label": "HSPB6", "type": "GEN", "size": 14, "props": {"full_name": "heat shock protein family B (small) member 6", "biotype": "protein_coding"}}, {"id": "ENSG00000004779", "label": "NDUFAB1", "type": "GEN", "size": 14, "props": {"full_name": "NADH:ubiquinone oxidoreductase subunit AB1", "biotype": "protein_coding"}}, {"id": "ENSG00000004799", "label": "PDK4", "type": "GEN", "size": 14, "props": {"full_name": "pyruvate dehydrogenase kinase 4", "biotype": "protein_coding"}}, {"id": "ENSG00000004809", "label": "SLC22A16", "type": "GEN", "size": 14, "props": {"full_name": "solute carrier family 22 member 16", "biotype": "protein_coding"}}, {"id": "ENSG00000004838", "label": "ZMYND10", "type": "GEN", "size": 14, "props": {"full_name": "zinc finger MYND-type containing 10", "biotype": "protein_coding"}}, {"id": "ENSG00000004846", "label": "ABCB5", "type": "GEN", "size": 14, "props": {"full_name": "ATP binding cassette subfamily B member 5", "biotype": "protein_coding"}}, {"id": "ENSG00000004848", "label": "ARX", "type": "GEN", "size": 14, "props": {"full_name": "aristaless related homeobox", "biotype": "protein_coding"}}, {"id": "ENSG00000004864", "label": "SLC25A13", "type": "GEN", "size": 14, "props": {"full_name": "solute carrier family 25 member 13", "biotype": "protein_coding"}}, {"id": "ENSG00000004866", "label": "ST7", "type": "GEN", "size": 14, "props": {"full_name": "suppression of tumorigenicity 7", "biotype": "protein_coding"}}, {"id": "ENSG00000004897", "label": "CDC27", "type": "GEN", "size": 14, "props": {"full_name": "cell division cycle 27", "biotype": "protein_coding"}}, {"id": "ENSG00000004939", "label": "SLC4A1", "type": "GEN", "size": 14, "props": {"full_name": "solute carrier family 4 member 1 (Diego blood group)", "biotype": "protein_coding"}}, {"id": "ENSG00000004948", "label": "CALCR", "type": "GEN", "size": 14, "props": {"full_name": "calcitonin receptor", "biotype": "protein_coding"}}, {"id": "ENSG00000004975", "label": "DVL2", "type": "GEN", "size": 14, "props": {"full_name": "dishevelled segment polarity protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000005007", "label": "UPF1", "type": "GEN", "size": 14, "props": {"full_name": "UPF1 RNA helicase and ATPase", "biotype": "protein_coding"}}, {"id": "ENSG00000005020", "label": "SKAP2", "type": "GEN", "size": 14, "props": {"full_name": "src kinase associated phosphoprotein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000005022", "label": "SLC25A5", "type": "GEN", "size": 14, "props": {"full_name": "solute carrier family 25 member 5", "biotype": "protein_coding"}}, {"id": "ENSG00000005073", "label": "HOXA11", "type": "GEN", "size": 14, "props": {"full_name": "homeobox A11", "biotype": "protein_coding"}}, {"id": "ENSG00000005100", "label": "DHX33", "type": "GEN", "size": 14, "props": {"full_name": "DEAH-box helicase 33", "biotype": "protein_coding"}}, {"id": "ENSG00000005102", "label": "MEOX1", "type": "GEN", "size": 14, "props": {"full_name": "mesenchyme homeobox 1", "biotype": "protein_coding"}}, {"id": "ENSG00000005108", "label": "THSD7A", "type": "GEN", "size": 14, "props": {"full_name": "thrombospondin type 1 domain containing 7A", "biotype": "protein_coding"}}, {"id": "ENSG00000005156", "label": "LIG3", "type": "GEN", "size": 14, "props": {"full_name": "DNA ligase 3", "biotype": "protein_coding"}}, {"id": "ENSG00000005175", "label": "RPAP3", "type": "GEN", "size": 14, "props": {"full_name": "RNA polymerase II associated protein 3", "biotype": "protein_coding"}}, {"id": "ENSG00000005187", "label": "ACSM3", "type": "GEN", "size": 14, "props": {"full_name": "acyl-CoA synthetase medium chain family member 3", "biotype": "protein_coding"}}, {"id": "ENSG00000005194", "label": "CIAPIN1", "type": "GEN", "size": 14, "props": {"full_name": "cytokine induced apoptosis inhibitor 1", "biotype": "protein_coding"}}, {"id": "ENSG00000005243", "label": "COPZ2", "type": "GEN", "size": 14, "props": {"full_name": "COPI coat complex subunit zeta 2", "biotype": "protein_coding"}}, {"id": "ENSG00000005339", "label": "CREBBP", "type": "GEN", "size": 14, "props": {"full_name": "CREB binding protein", "biotype": "protein_coding"}}, {"id": "ENSG00000005379", "label": "TSPOAP1", "type": "GEN", "size": 14, "props": {"full_name": "TSPO associated protein 1", "biotype": "protein_coding"}}, {"id": "ENSG00000005381", "label": "MPO", "type": "GEN", "size": 14, "props": {"full_name": "myeloperoxidase", "biotype": "protein_coding"}}, {"id": "ENSG00000005421", "label": "PON1", "type": "GEN", "size": 14, "props": {"full_name": "paraoxonase 1", "biotype": "protein_coding"}}, {"id": "ENSG00000005471", "label": "ABCB4", "type": "GEN", "size": 14, "props": {"full_name": "ATP binding cassette subfamily B member 4", "biotype": "protein_coding"}}, {"id": "ENSG00000005483", "label": "KMT2E", "type": "GEN", "size": 14, "props": {"full_name": "lysine methyltransferase 2E (inactive)", "biotype": "protein_coding"}}, {"id": "ENSG00000005513", "label": "SOX8", "type": "GEN", "size": 14, "props": {"full_name": "SRY-box transcription factor 8", "biotype": "protein_coding"}}, {"id": "ENSG00000005700", "label": "IBTK", "type": "GEN", "size": 14, "props": {"full_name": "inhibitor of Bruton tyrosine kinase", "biotype": "protein_coding"}}, {"id": "ENSG00000005801", "label": "ZNF195", "type": "GEN", "size": 14, "props": {"full_name": "zinc finger protein 195", "biotype": "protein_coding"}}, {"id": "ENSG00000005810", "label": "MYCBP2", "type": "GEN", "size": 14, "props": {"full_name": "MYC binding protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000005812", "label": "FBXL3", "type": "GEN", "size": 14, "props": {"full_name": "F-box and leucine rich repeat protein 3", "biotype": "protein_coding"}}, {"id": "ENSG00000005844", "label": "ITGAL", "type": "GEN", "size": 14, "props": {"full_name": "integrin subunit alpha L", "biotype": "protein_coding"}}, {"id": "ENSG00000005882", "label": "PDK2", "type": "GEN", "size": 14, "props": {"full_name": "pyruvate dehydrogenase kinase 2", "biotype": "protein_coding"}}, {"id": "ENSG00000005884", "label": "ITGA3", "type": "GEN", "size": 14, "props": {"full_name": "integrin subunit alpha 3", "biotype": "protein_coding"}}, {"id": "ENSG00000005889", "label": "ZFX", "type": "GEN", "size": 14, "props": {"full_name": "zinc finger protein X-linked", "biotype": "protein_coding"}}, {"id": "ENSG00000005893", "label": "LAMP2", "type": "GEN", "size": 14, "props": {"full_name": "lysosomal associated membrane protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000005961", "label": "ITGA2B", "type": "GEN", "size": 14, "props": {"full_name": "integrin subunit alpha 2b", "biotype": "protein_coding"}}, {"id": "ENSG00000005981", "label": "ASB4", "type": "GEN", "size": 14, "props": {"full_name": "ankyrin repeat and SOCS box containing 4", "biotype": "protein_coding"}}, {"id": "ENSG00000006007", "label": "GDE1", "type": "GEN", "size": 14, "props": {"full_name": "glycerophosphodiester phosphodiesterase 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006016", "label": "CRLF1", "type": "GEN", "size": 14, "props": {"full_name": "cytokine receptor like factor 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006042", "label": "TMEM98", "type": "GEN", "size": 14, "props": {"full_name": "transmembrane protein 98", "biotype": "protein_coding"}}, {"id": "ENSG00000006047", "label": "YBX2", "type": "GEN", "size": 14, "props": {"full_name": "Y-box binding protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000006062", "label": "MAP3K14", "type": "GEN", "size": 14, "props": {"full_name": "mitogen-activated protein kinase kinase kinase 14", "biotype": "protein_coding"}}, {"id": "ENSG00000006071", "label": "ABCC8", "type": "GEN", "size": 14, "props": {"full_name": "ATP binding cassette subfamily C member 8", "biotype": "protein_coding"}}, {"id": "ENSG00000006116", "label": "CACNG3", "type": "GEN", "size": 14, "props": {"full_name": "calcium voltage-gated channel auxiliary subunit gamma 3", "biotype": "protein_coding"}}, {"id": "ENSG00000006118", "label": "TMEM132A", "type": "GEN", "size": 14, "props": {"full_name": "transmembrane protein 132A", "biotype": "protein_coding"}}, {"id": "ENSG00000006125", "label": "AP2B1", "type": "GEN", "size": 14, "props": {"full_name": "adaptor related protein complex 2 subunit beta 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006128", "label": "TAC1", "type": "GEN", "size": 14, "props": {"full_name": "tachykinin precursor 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006194", "label": "ZNF263", "type": "GEN", "size": 14, "props": {"full_name": "zinc finger protein 263", "biotype": "protein_coding"}}, {"id": "ENSG00000006210", "label": "CX3CL1", "type": "GEN", "size": 14, "props": {"full_name": "C-X3-C motif chemokine ligand 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006283", "label": "CACNA1G", "type": "GEN", "size": 14, "props": {"full_name": "calcium voltage-gated channel subunit alpha1 G", "biotype": "protein_coding"}}, {"id": "ENSG00000006327", "label": "TNFRSF12A", "type": "GEN", "size": 14, "props": {"full_name": "TNF receptor superfamily member 12A", "biotype": "protein_coding"}}, {"id": "ENSG00000006377", "label": "DLX6", "type": "GEN", "size": 14, "props": {"full_name": "distal-less homeobox 6", "biotype": "protein_coding"}}, {"id": "ENSG00000006432", "label": "MAP3K9", "type": "GEN", "size": 14, "props": {"full_name": "mitogen-activated protein kinase kinase kinase 9", "biotype": "protein_coding"}}, {"id": "ENSG00000006451", "label": "RALA", "type": "GEN", "size": 14, "props": {"full_name": "RAS like proto-oncogene A", "biotype": "protein_coding"}}, {"id": "ENSG00000006453", "label": "BAIAP2L1", "type": "GEN", "size": 14, "props": {"full_name": "BAR/IMD domain containing adaptor protein 2 like 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006459", "label": "KDM7A", "type": "GEN", "size": 14, "props": {"full_name": "lysine demethylase 7A", "biotype": "protein_coding"}}, {"id": "ENSG00000006468", "label": "ETV1", "type": "GEN", "size": 14, "props": {"full_name": "ETS variant transcription factor 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006530", "label": "AGK", "type": "GEN", "size": 14, "props": {"full_name": "acylglycerol kinase", "biotype": "protein_coding"}}, {"id": "ENSG00000006534", "label": "ALDH3B1", "type": "GEN", "size": 14, "props": {"full_name": "aldehyde dehydrogenase 3 family member B1", "biotype": "protein_coding"}}, {"id": "ENSG00000006576", "label": "PHTF2", "type": "GEN", "size": 14, "props": {"full_name": "putative homeodomain transcription factor 2", "biotype": "protein_coding"}}, {"id": "ENSG00000006606", "label": "CCL26", "type": "GEN", "size": 14, "props": {"full_name": "C-C motif chemokine ligand 26", "biotype": "protein_coding"}}, {"id": "ENSG00000006607", "label": "FARP2", "type": "GEN", "size": 14, "props": {"full_name": "FERM, ARH/RhoGEF and pleckstrin domain protein 2", "biotype": "protein_coding"}}, {"id": "ENSG00000006625", "label": "GGCT", "type": "GEN", "size": 14, "props": {"full_name": "gamma-glutamylcyclotransferase", "biotype": "protein_coding"}}, {"id": "ENSG00000006634", "label": "DBF4", "type": "GEN", "size": 14, "props": {"full_name": "DBF4-CDC7 kinase regulatory subunit", "biotype": "protein_coding"}}, {"id": "ENSG00000006638", "label": "TBXA2R", "type": "GEN", "size": 14, "props": {"full_name": "thromboxane A2 receptor", "biotype": "protein_coding"}}, {"id": "ENSG00000006652", "label": "IFRD1", "type": "GEN", "size": 14, "props": {"full_name": "interferon related developmental regulator 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006659", "label": "LGALS14", "type": "GEN", "size": 14, "props": {"full_name": "galectin 14", "biotype": "protein_coding"}}, {"id": "ENSG00000006695", "label": "COX10", "type": "GEN", "size": 14, "props": {"full_name": "cytochrome c oxidase assembly factor heme A:farnesyltransferase COX10", "biotype": "protein_coding"}}, {"id": "ENSG00000006704", "label": "GTF2IRD1", "type": "GEN", "size": 14, "props": {"full_name": "GTF2I repeat domain containing 1", "biotype": "protein_coding"}}, {"id": "ENSG00000006712", "label": "PAF1", "type": "GEN", "size": 14, "props": {"full_name": "PAF1 homolog, Paf1/RNA polymerase II complex component", "biotype": "protein_coding"}}, {"id": "ENSG00000006715", "label": "VPS41", "type": "GEN", "size": 14, "props": {"full_name": "VPS41 subunit of HOPS complex", "biotype": "protein_coding"}}, {"id": "ENSG00000006740", "label": "ARHGAP44", "type": "GEN", "size": 14, "props": {"full_name": "Rho GTPase activating protein 44", "biotype": "protein_coding"}}, {"id": "ENSG00000006744", "label": "ELAC2", "type": "GEN", "size": 14, "props": {"full_name": "elaC ribonuclease Z 2", "biotype": "protein_coding"}}, {"id": "ENSG00000006747", "label": "SCIN", "type": "GEN", "size": 14, "props": {"full_name": "scinderin", "biotype": "protein_coding"}}, {"id": "ENSG00000006788", "label": "MYH13", "type": "GEN", "size": 14, "props": {"full_name": "myosin heavy chain 13", "biotype": "protein_coding"}}, {"id": "ENSG00000006831", "label": "ADIPOR2", "type": "GEN", "size": 14, "props": {"full_name": "adiponectin receptor 2", "biotype": "protein_coding"}}, {"id": "ENSG00000006837", "label": "CDKL3", "type": "GEN", "size": 14, "props": {"full_name": "cyclin dependent kinase like 3", "biotype": "protein_coding"}}, {"id": "ENSG00000007001", "label": "UPP2", "type": "GEN", "size": 14, "props": {"full_name": "uridine phosphorylase 2", "biotype": "protein_coding"}}, {"id": "ENSG00000007047", "label": "MARK4", "type": "GEN", "size": 14, "props": {"full_name": "microtubule affinity regulating kinase 4", "biotype": "protein_coding"}}, {"id": "ENSG00000007062", "label": "PROM1", "type": "GEN", "size": 14, "props": {"full_name": "prominin 1", "biotype": "protein_coding"}}, {"id": "ENSG00000007168", "label": "PAFAH1B1", "type": "GEN", "size": 14, "props": {"full_name": "platelet activating factor acetylhydrolase 1b regulatory subunit 1", "biotype": "protein_coding"}}, {"id": "ENSG00000007171", "label": "NOS2", "type": "GEN", "size": 14, "props": {"full_name": "nitric oxide synthase 2", "biotype": "protein_coding"}}, {"id": "ENSG00000007174", "label": "DNAH9", "type": "GEN", "size": 14, "props": {"full_name": "dynein axonemal heavy chain 9", "biotype": "protein_coding"}}, {"id": "ENSG00000007202", "label": "BLTP2", "type": "GEN", "size": 14, "props": {"full_name": "bridge-like lipid transfer protein family member 2", "biotype": "protein_coding"}}, {"id": "ENSG00000007216", "label": "SLC13A2", "type": "GEN", "size": 14, "props": {"full_name": "solute carrier family 13 member 2", "biotype": "protein_coding"}}, {"id": "ENSG00000007237", "label": "GAS7", "type": "GEN", "size": 14, "props": {"full_name": "growth arrest specific 7", "biotype": "protein_coding"}}, {"id": "ENSG00000007264", "label": "MATK", "type": "GEN", "size": 14, "props": {"full_name": "megakaryocyte-associated tyrosine kinase", "biotype": "protein_coding"}}, {"id": "ENSG00000007306", "label": "CEACAM7", "type": "GEN", "size": 14, "props": {"full_name": "CEA cell adhesion molecule 7", "biotype": "protein_coding"}}, {"id": "ENSG00000007312", "label": "CD79B", "type": "GEN", "size": 14, "props": {"full_name": "CD79b molecule", "biotype": "protein_coding"}}, {"id": "ENSG00000007314", "label": "SCN4A", "type": "GEN", "size": 14, "props": {"full_name": "sodium voltage-gated channel alpha subunit 4", "biotype": "protein_coding"}}, {"id": "ENSG00000007341", "label": "ST7L", "type": "GEN", "size": 14, "props": {"full_name": "suppression of tumorigenicity 7 like", "biotype": "protein_coding"}}, {"id": "ENSG00000007350", "label": "TKTL1", "type": "GEN", "size": 14, "props": {"full_name": "transketolase like 1", "biotype": "protein_coding"}}, {"id": "ENSG00000007372", "label": "PAX6", "type": "GEN", "size": 14, "props": {"full_name": "paired box 6", "biotype": "protein_coding"}}, {"id": "ENSG00000007376", "label": "RPUSD1", "type": "GEN", "size": 14, "props": {"full_name": "RNA pseudouridine synthase domain containing 1", "biotype": "protein_coding"}}, {"id": "ENSG00000007384", "label": "RHBDF1", "type": "GEN", "size": 14, "props": {"full_name": "rhomboid 5 homolog 1", "biotype": "protein_coding"}}, {"id": "ENSG00000007392", "label": "LUC7L", "type": "GEN", "size": 14, "props": {"full_name": "LUC7 like", "biotype": "protein_coding"}}, {"id": "ENSG00000007402", "label": "CACNA2D2", "type": "GEN", "size": 14, "props": {"full_name": "calcium voltage-gated channel auxiliary subunit alpha2delta 2", "biotype": "protein_coding"}}, {"id": "ENSG00000007541", "label": "PIGQ", "type": "GEN", "size": 14, "props": {"full_name": "phosphatidylinositol glycan anchor biosynthesis class Q", "biotype": "protein_coding"}}, {"id": "ENSG00000007545", "label": "CRAMP1", "type": "GEN", "size": 14, "props": {"full_name": "cramped chromatin regulator homolog 1", "biotype": "protein_coding"}}, {"id": "ENSG00000007908", "label": "SELE", "type": "GEN", "size": 14, "props": {"full_name": "selectin E", "biotype": "protein_coding"}}, {"id": "ENSG00000007933", "label": "FMO3", "type": "GEN", "size": 14, "props": {"full_name": "flavin containing dimethylaniline monoxygenase 3", "biotype": "protein_coding"}}, {"id": "ENSG00000007944", "label": "MYLIP", "type": "GEN", "size": 14, "props": {"full_name": "myosin regulatory light chain interacting protein", "biotype": "protein_coding"}}, {"id": "ENSG00000007952", "label": "NOX1", "type": "GEN", "size": 14, "props": {"full_name": "NADPH oxidase 1", "biotype": "protein_coding"}}, {"id": "ENSG00000007968", "label": "E2F2", "type": "GEN", "size": 14, "props": {"full_name": "E2F transcription factor 2", "biotype": "protein_coding"}}, {"id": "ENSG00000008018", "label": "PSMB1", "type": "GEN", "size": 14, "props": {"full_name": "proteasome 20S subunit beta 1", "biotype": "protein_coding"}}, {"id": "ENSG00000008056", "label": "SYN1", "type": "GEN", "size": 14, "props": {"full_name": "synapsin I", "biotype": "protein_coding"}}, {"id": "ENSG00000008083", "label": "JARID2", "type": "GEN", "size": 14, "props": {"full_name": "jumonji and AT-rich interaction domain containing 2", "biotype": "protein_coding"}}, {"id": "ENSG00000008130", "label": "NADK", "type": "GEN", "size": 14, "props": {"full_name": "NAD kinase", "biotype": "protein_coding"}}, {"id": "ENSG00000008196", "label": "TFAP2B", "type": "GEN", "size": 14, "props": {"full_name": "transcription factor AP-2 beta", "biotype": "protein_coding"}}, {"id": "ENSG00000008197", "label": "TFAP2D", "type": "GEN", "size": 14, "props": {"full_name": "transcription factor AP-2 delta", "biotype": "protein_coding"}}, {"id": "ENSG00000008226", "label": "DLEC1", "type": "GEN", "size": 14, "props": {"full_name": "DLEC1 cilia and flagella associated protein", "biotype": "protein_coding"}}, {"id": "HP_0000006", "label": "Autosomal dominant inheritance", "type": "PHE", "size": 13, "props": {}}, {"id": "HP_0001442", "label": "Typified by somatic mosaicism", "type": "PHE", "size": 13, "props": {}}, {"id": "HP_0006519", "label": "Alveolar cell carcinoma", "type": "PHE", "size": 13, "props": {}}, {"id": "HP_0030078", "label": "Lung adenocarcinoma", "type": "PHE", "size": 13, "props": {}}, {"id": "HP_0030358", "label": "Non-small cell lung carcinoma", "type": "PHE", "size": 13, "props": {}}], "edges": [{"id": 0, "from": "CHEMBL100259", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 1, "from": "CHEMBL1006", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 2, "from": "CHEMBL1023", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 3, "from": "CHEMBL1024", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 4, "from": "CHEMBL105", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 5, "from": "CHEMBL105442", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 6, "from": "CHEMBL1064", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 7, "from": "CHEMBL1076903", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 8, "from": "CHEMBL1079175", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 9, "from": "CHEMBL1079742", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 10, "from": "CHEMBL1086863", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 11, "from": "CHEMBL109", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 12, "from": "CHEMBL1092067", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 13, "from": "CHEMBL1094636", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 14, "from": "CHEMBL109480", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 15, "from": "CHEMBL1096882", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 16, "from": "CHEMBL1098319", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 17, "from": "CHEMBL113178", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 18, "from": "CHEMBL11359", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 19, "from": "CHEMBL1144", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 20, "from": "CHEMBL1173655", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 21, "from": "CHEMBL118", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 22, "from": "CHEMBL118218", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 23, "from": "CHEMBL1184904", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 24, "from": "CHEMBL1186894", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 25, "from": "CHEMBL118841", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 26, "from": "CHEMBL1200485", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 27, "from": "CHEMBL1200574", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 28, "from": "CHEMBL1200645", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 29, "from": "CHEMBL1200680", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 30, "from": "CHEMBL1200796", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 31, "from": "CHEMBL1200981", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 32, "from": "CHEMBL1201182", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 33, "from": "CHEMBL1201304", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 34, "from": "CHEMBL1201438", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 35, "from": "CHEMBL1201460", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 36, "from": "CHEMBL1201481", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 37, "from": "CHEMBL1201565", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 38, "from": "CHEMBL1201567", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 39, "from": "CHEMBL1201568", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 40, "from": "CHEMBL1201577", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 41, "from": "CHEMBL1201581", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 42, "from": "CHEMBL1201583", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 43, "from": "CHEMBL1201585", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 44, "from": "CHEMBL1201666", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 45, "from": "CHEMBL1201670", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 46, "from": "CHEMBL1201733", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 47, "from": "CHEMBL1201734", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 48, "from": "CHEMBL1201746", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 49, "from": "CHEMBL1201752", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 50, "from": "CHEMBL1201827", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 51, "from": "CHEMBL1201834", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 52, "from": "CHEMBL1205", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 53, "from": "CHEMBL1222251", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 54, "from": "CHEMBL1230609", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 55, "from": "CHEMBL1235478", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 56, "from": "CHEMBL1237023", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 57, "from": "CHEMBL1256391", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 58, "from": "CHEMBL1256786", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 59, "from": "CHEMBL1257030", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 60, "from": "CHEMBL1336", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 61, "from": "CHEMBL1349", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 62, "from": "CHEMBL1351", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 63, "from": "CHEMBL1358", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 64, "from": "CHEMBL1370", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 65, "from": "CHEMBL1421", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 66, "from": "CHEMBL1431", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 67, "from": "CHEMBL1434", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 68, "from": "CHEMBL1535", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 69, "from": "CHEMBL1536", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 70, "from": "CHEMBL1567", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 71, "from": "CHEMBL159", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 72, "from": "CHEMBL1607", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 73, "from": "CHEMBL1614650", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 74, "from": "CHEMBL1614701", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 75, "from": "CHEMBL1622", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 76, "from": "CHEMBL1637", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 77, "from": "CHEMBL1642", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 78, "from": "CHEMBL1646", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 79, "from": "CHEMBL167691", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 80, "from": "CHEMBL1698", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 81, "from": "CHEMBL170630", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 82, "from": "CHEMBL1743001", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 83, "from": "CHEMBL1743006", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 84, "from": "CHEMBL1743051", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 85, "from": "CHEMBL1743260", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 86, "from": "CHEMBL1773", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 87, "from": "CHEMBL178459", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 88, "from": "CHEMBL1789844", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 89, "from": "CHEMBL1789941", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 90, "from": "CHEMBL1873475", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 91, "from": "CHEMBL18901", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 92, "from": "CHEMBL189963", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 93, "from": "CHEMBL190461", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 94, "from": "CHEMBL1905073", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 95, "from": "CHEMBL1908360", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 96, "from": "CHEMBL1947204", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 97, "from": "CHEMBL196", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 98, "from": "CHEMBL1976040", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 99, "from": "CHEMBL1980825", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 100, "from": "CHEMBL2017974", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 101, "from": "CHEMBL2028663", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 102, "from": "CHEMBL2087361", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 103, "from": "CHEMBL2103798", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 104, "from": "CHEMBL2103875", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 105, "from": "CHEMBL2103879", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 106, "from": "CHEMBL2104406", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 107, "from": "CHEMBL2105719", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 108, "from": "CHEMBL2105741", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 109, "from": "CHEMBL2105902", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 110, "from": "CHEMBL2106049", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 111, "from": "CHEMBL2107143", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 112, "from": "CHEMBL2107313", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 113, "from": "CHEMBL2107315", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 114, "from": "CHEMBL2107319", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 115, "from": "CHEMBL2107337", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 116, "from": "CHEMBL2107357", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 117, "from": "CHEMBL2107358", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 118, "from": "CHEMBL2107881", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 119, "from": "CHEMBL2108061", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 120, "from": "CHEMBL2108359", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 121, "from": "CHEMBL2108442", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 122, "from": "CHEMBL2108506", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 123, "from": "CHEMBL2108585", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 124, "from": "CHEMBL2108628", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 125, "from": "CHEMBL2108658", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 126, "from": "CHEMBL2108702", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 127, "from": "CHEMBL2108730", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 128, "from": "CHEMBL2108738", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 129, "from": "CHEMBL2108905", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 130, "from": "CHEMBL2109204", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 131, "from": "CHEMBL2109229", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 132, "from": "CHEMBL2109321", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 133, "from": "CHEMBL2109503", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 134, "from": "CHEMBL2109506", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 135, "from": "CHEMBL2109516", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 136, "from": "CHEMBL2110563", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 137, "from": "CHEMBL2110725", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 138, "from": "CHEMBL2110732", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 139, "from": "CHEMBL2111084", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 140, "from": "CHEMBL2111086", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 141, "from": "CHEMBL2111186", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 142, "from": "CHEMBL225072", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 143, "from": "CHEMBL2251727", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 144, "from": "CHEMBL231616", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 145, "from": "CHEMBL235191", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 146, "from": "CHEMBL2360464", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 147, "from": "CHEMBL2364655", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 148, "from": "CHEMBL238071", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 149, "from": "CHEMBL2387080", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 150, "from": "CHEMBL24828", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 151, "from": "CHEMBL272980", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 152, "from": "CHEMBL274070", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 153, "from": "CHEMBL274654", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 154, "from": "CHEMBL276832", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 155, "from": "CHEMBL279785", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 156, "from": "CHEMBL284616", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 157, "from": "CHEMBL289228", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 158, "from": "CHEMBL297453", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 159, "from": "CHEMBL3", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 160, "from": "CHEMBL300138", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 161, "from": "CHEMBL3039544", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 162, "from": "CHEMBL306043", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 163, "from": "CHEMBL306823", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 164, "from": "CHEMBL3137343", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 165, "from": "CHEMBL3186534", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 166, "from": "CHEMBL3187723", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 167, "from": "CHEMBL3188267", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 168, "from": "CHEMBL3244648", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 169, "from": "CHEMBL325041", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 170, "from": "CHEMBL3301587", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 171, "from": "CHEMBL3301610", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 172, "from": "CHEMBL3334567", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 173, "from": "CHEMBL3353410", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 174, "from": "CHEMBL336296", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 175, "from": "CHEMBL34259", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 176, "from": "CHEMBL34412", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 177, "from": "CHEMBL348475", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 178, "from": "CHEMBL350775", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 179, "from": "CHEMBL3544907", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 180, "from": "CHEMBL3544910", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 181, "from": "CHEMBL3544916", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 182, "from": "CHEMBL3544993", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 183, "from": "CHEMBL3545063", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 184, "from": "CHEMBL3545252", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 185, "from": "CHEMBL3545369", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 186, "from": "CHEMBL3545414", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 187, "from": "CHEMBL359744", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 188, "from": "CHEMBL3622820", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 189, "from": "CHEMBL3707227", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 190, "from": "CHEMBL377559", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 191, "from": "CHEMBL3775741", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 192, "from": "CHEMBL378544", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 193, "from": "CHEMBL3787344", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 194, "from": "CHEMBL38", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 195, "from": "CHEMBL382300", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 196, "from": "CHEMBL3833367", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 197, "from": "CHEMBL384200", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 198, "from": "CHEMBL384467", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 199, "from": "CHEMBL39677", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 200, "from": "CHEMBL3989512", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 201, "from": "CHEMBL3989514", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 202, "from": "CHEMBL3989727", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 203, "from": "CHEMBL3989759", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 204, "from": "CHEMBL3989798", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 205, "from": "CHEMBL408194", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 206, "from": "CHEMBL4113131", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 207, "from": "CHEMBL413", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 208, "from": "CHEMBL414804", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 209, "from": "CHEMBL417", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 210, "from": "CHEMBL427", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 211, "from": "CHEMBL4285883", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 212, "from": "CHEMBL428647", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 213, "from": "CHEMBL4297163", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 214, "from": "CHEMBL4297208", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 215, "from": "CHEMBL4297258", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 216, "from": "CHEMBL4297565", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 217, "from": "CHEMBL4297571", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 218, "from": "CHEMBL4297715", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 219, "from": "CHEMBL4297723", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 220, "from": "CHEMBL4297747", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 221, "from": "CHEMBL4297817", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 222, "from": "CHEMBL4297829", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 223, "from": "CHEMBL4297831", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 224, "from": "CHEMBL4297840", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 225, "from": "CHEMBL4297843", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 226, "from": "CHEMBL4297939", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 227, "from": "CHEMBL4297946", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 228, "from": "CHEMBL4298024", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 229, "from": "CHEMBL4301078", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 230, "from": "CHEMBL4303201", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 231, "from": "CHEMBL4303214", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 232, "from": "CHEMBL4303669", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 233, "from": "CHEMBL44657", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 234, "from": "CHEMBL449158", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 235, "from": "CHEMBL4535757", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 236, "from": "CHEMBL4558324", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 237, "from": "CHEMBL4594308", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 238, "from": "CHEMBL4594350", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 239, "from": "CHEMBL4594456", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 240, "from": "CHEMBL4594483", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 241, "from": "CHEMBL4650400", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 242, "from": "CHEMBL4650473", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 243, "from": "CHEMBL467", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 244, "from": "CHEMBL468", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 245, "from": "CHEMBL476", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 246, "from": "CHEMBL4761468", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 247, "from": "CHEMBL477772", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 248, "from": "CHEMBL481", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 249, "from": "CHEMBL481958", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 250, "from": "CHEMBL483158", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 251, "from": "CHEMBL483254", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 252, "from": "CHEMBL487253", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 253, "from": "CHEMBL48802", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 254, "from": "CHEMBL488025", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 255, "from": "CHEMBL491473", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 256, "from": "CHEMBL494", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 257, "from": "CHEMBL500853", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 258, "from": "CHEMBL501867", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 259, "from": "CHEMBL502835", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 260, "from": "CHEMBL50882", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 261, "from": "CHEMBL5095352", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 262, "from": "CHEMBL5095383", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 263, "from": "CHEMBL514", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 264, "from": "CHEMBL521686", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 265, "from": "CHEMBL5314988", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 266, "from": "CHEMBL5315042", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 267, "from": "CHEMBL53463", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 268, "from": "CHEMBL535", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 269, "from": "CHEMBL538943", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 270, "from": "CHEMBL547", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 271, "from": "CHEMBL5483015", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 272, "from": "CHEMBL553", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 273, "from": "CHEMBL553025", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 274, "from": "CHEMBL572881", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 275, "from": "CHEMBL584", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 276, "from": "CHEMBL595", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 277, "from": "CHEMBL601719", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 278, "from": "CHEMBL635", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 279, "from": "CHEMBL64391", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 280, "from": "CHEMBL657", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 281, "from": "CHEMBL67279", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 282, "from": "CHEMBL690", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 283, "from": "CHEMBL71263", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 284, "from": "CHEMBL730", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 285, "from": "CHEMBL7301", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 286, "from": "CHEMBL742", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 287, "from": "CHEMBL75094", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 288, "from": "CHEMBL76222", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 289, "from": "CHEMBL77305", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 290, "from": "CHEMBL79", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 291, "from": "CHEMBL79280", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 292, "from": "CHEMBL810", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 293, "from": "CHEMBL837", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 294, "from": "CHEMBL84", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 295, "from": "CHEMBL88", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 296, "from": "CHEMBL888", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 297, "from": "CHEMBL894", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 298, "from": "CHEMBL90555", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 299, "from": "CHEMBL92", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 300, "from": "CHEMBL924", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 301, "from": "CHEMBL93", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 302, "from": "CHEMBL939", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 303, "from": "CHEMBL941", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 304, "from": "CHEMBL96172", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 305, "from": "CHEMBL975", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 306, "from": "CHEMBL98", "to": "MONDO_0008903", "relation": "INDICATION"}, {"id": 307, "from": "MONDO_0008903", "to": "ENSG00000002016", "relation": "ASSOCIATED_WITH"}, {"id": 308, "from": "MONDO_0008903", "to": "ENSG00000041357", "relation": "ASSOCIATED_WITH"}, {"id": 309, "from": "MONDO_0008903", "to": "ENSG00000049656", "relation": "ASSOCIATED_WITH"}, {"id": 310, "from": "MONDO_0008903", "to": "ENSG00000055130", "relation": "ASSOCIATED_WITH"}, {"id": 311, "from": "MONDO_0008903", "to": "ENSG00000060069", "relation": "ASSOCIATED_WITH"}, {"id": 312, "from": "MONDO_0008903", "to": "ENSG00000060237", "relation": "ASSOCIATED_WITH"}, {"id": 313, "from": "MONDO_0008903", "to": "ENSG00000067369", "relation": "ASSOCIATED_WITH"}, {"id": 314, "from": "MONDO_0008903", "to": "ENSG00000080644", "relation": "ASSOCIATED_WITH"}, {"id": 315, "from": "MONDO_0008903", "to": "ENSG00000082805", "relation": "ASSOCIATED_WITH"}, {"id": 316, "from": "MONDO_0008903", "to": "ENSG00000083312", "relation": "ASSOCIATED_WITH"}, {"id": 317, "from": "MONDO_0008903", "to": "ENSG00000099810", "relation": "ASSOCIATED_WITH"}, {"id": 318, "from": "MONDO_0008903", "to": "ENSG00000106462", "relation": "ASSOCIATED_WITH"}, {"id": 319, "from": "MONDO_0008903", "to": "ENSG00000115866", "relation": "ASSOCIATED_WITH"}, {"id": 320, "from": "MONDO_0008903", "to": "ENSG00000117971", "relation": "ASSOCIATED_WITH"}, {"id": 321, "from": "MONDO_0008903", "to": "ENSG00000121966", "relation": "ASSOCIATED_WITH"}, {"id": 322, "from": "MONDO_0008903", "to": "ENSG00000136381", "relation": "ASSOCIATED_WITH"}, {"id": 323, "from": "MONDO_0008903", "to": "ENSG00000136999", "relation": "ASSOCIATED_WITH"}, {"id": 324, "from": "MONDO_0008903", "to": "ENSG00000137822", "relation": "ASSOCIATED_WITH"}, {"id": 325, "from": "MONDO_0008903", "to": "ENSG00000139597", "relation": "ASSOCIATED_WITH"}, {"id": 326, "from": "MONDO_0008903", "to": "ENSG00000139618", "relation": "ASSOCIATED_WITH"}, {"id": 327, "from": "MONDO_0008903", "to": "ENSG00000140265", "relation": "ASSOCIATED_WITH"}, {"id": 328, "from": "MONDO_0008903", "to": "ENSG00000142661", "relation": "ASSOCIATED_WITH"}, {"id": 329, "from": "MONDO_0008903", "to": "ENSG00000144229", "relation": "ASSOCIATED_WITH"}, {"id": 330, "from": "MONDO_0008903", "to": "ENSG00000147676", "relation": "ASSOCIATED_WITH"}, {"id": 331, "from": "MONDO_0008903", "to": "ENSG00000157107", "relation": "ASSOCIATED_WITH"}, {"id": 332, "from": "MONDO_0008903", "to": "ENSG00000164362", "relation": "ASSOCIATED_WITH"}, {"id": 333, "from": "MONDO_0008903", "to": "ENSG00000166963", "relation": "ASSOCIATED_WITH"}, {"id": 334, "from": "MONDO_0008903", "to": "ENSG00000168803", "relation": "ASSOCIATED_WITH"}, {"id": 335, "from": "MONDO_0008903", "to": "ENSG00000169684", "relation": "ASSOCIATED_WITH"}, {"id": 336, "from": "MONDO_0008903", "to": "ENSG00000170279", "relation": "ASSOCIATED_WITH"}, {"id": 337, "from": "MONDO_0008903", "to": "ENSG00000174469", "relation": "ASSOCIATED_WITH"}, {"id": 338, "from": "MONDO_0008903", "to": "ENSG00000177468", "relation": "ASSOCIATED_WITH"}, {"id": 339, "from": "MONDO_0008903", "to": "ENSG00000178177", "relation": "ASSOCIATED_WITH"}, {"id": 340, "from": "MONDO_0008903", "to": "ENSG00000188266", "relation": "ASSOCIATED_WITH"}, {"id": 341, "from": "MONDO_0008903", "to": "ENSG00000255974", "relation": "ASSOCIATED_WITH"}, {"id": 342, "from": "MONDO_0008903", "to": "ENSG00000146648", "relation": "ASSOCIATED_WITH"}, {"id": 343, "from": "MONDO_0008903", "to": "ENSG00000000003", "relation": "ASSOCIATED_WITH"}, {"id": 344, "from": "MONDO_0008903", "to": "ENSG00000000005", "relation": "ASSOCIATED_WITH"}, {"id": 345, "from": "MONDO_0008903", "to": "ENSG00000000460", "relation": "ASSOCIATED_WITH"}, {"id": 346, "from": "MONDO_0008903", "to": "ENSG00000000938", "relation": "ASSOCIATED_WITH"}, {"id": 347, "from": "MONDO_0008903", "to": "ENSG00000000971", "relation": "ASSOCIATED_WITH"}, {"id": 348, "from": "MONDO_0008903", "to": "ENSG00000001036", "relation": "ASSOCIATED_WITH"}, {"id": 349, "from": "MONDO_0008903", "to": "ENSG00000001084", "relation": "ASSOCIATED_WITH"}, {"id": 350, "from": "MONDO_0008903", "to": "ENSG00000001167", "relation": "ASSOCIATED_WITH"}, {"id": 351, "from": "MONDO_0008903", "to": "ENSG00000001497", "relation": "ASSOCIATED_WITH"}, {"id": 352, "from": "MONDO_0008903", "to": "ENSG00000001561", "relation": "ASSOCIATED_WITH"}, {"id": 353, "from": "MONDO_0008903", "to": "ENSG00000001617", "relation": "ASSOCIATED_WITH"}, {"id": 354, "from": "MONDO_0008903", "to": "ENSG00000001626", "relation": "ASSOCIATED_WITH"}, {"id": 355, "from": "MONDO_0008903", "to": "ENSG00000001629", "relation": "ASSOCIATED_WITH"}, {"id": 356, "from": "MONDO_0008903", "to": "ENSG00000001630", "relation": "ASSOCIATED_WITH"}, {"id": 357, "from": "MONDO_0008903", "to": "ENSG00000001631", "relation": "ASSOCIATED_WITH"}, {"id": 358, "from": "MONDO_0008903", "to": "ENSG00000002016", "relation": "ASSOCIATED_WITH"}, {"id": 359, "from": "MONDO_0008903", "to": "ENSG00000002330", "relation": "ASSOCIATED_WITH"}, {"id": 360, "from": "MONDO_0008903", "to": "ENSG00000002549", "relation": "ASSOCIATED_WITH"}, {"id": 361, "from": "MONDO_0008903", "to": "ENSG00000002586", "relation": "ASSOCIATED_WITH"}, {"id": 362, "from": "MONDO_0008903", "to": "ENSG00000002587", "relation": "ASSOCIATED_WITH"}, {"id": 363, "from": "MONDO_0008903", "to": "ENSG00000002726", "relation": "ASSOCIATED_WITH"}, {"id": 364, "from": "MONDO_0008903", "to": "ENSG00000002745", "relation": "ASSOCIATED_WITH"}, {"id": 365, "from": "MONDO_0008903", "to": "ENSG00000002746", "relation": "ASSOCIATED_WITH"}, {"id": 366, "from": "MONDO_0008903", "to": "ENSG00000002822", "relation": "ASSOCIATED_WITH"}, {"id": 367, "from": "MONDO_0008903", "to": "ENSG00000002834", "relation": "ASSOCIATED_WITH"}, {"id": 368, "from": "MONDO_0008903", "to": "ENSG00000002933", "relation": "ASSOCIATED_WITH"}, {"id": 369, "from": "MONDO_0008903", "to": "ENSG00000003056", "relation": "ASSOCIATED_WITH"}, {"id": 370, "from": "MONDO_0008903", "to": "ENSG00000003096", "relation": "ASSOCIATED_WITH"}, {"id": 371, "from": "MONDO_0008903", "to": "ENSG00000003137", "relation": "ASSOCIATED_WITH"}, {"id": 372, "from": "MONDO_0008903", "to": "ENSG00000003147", "relation": "ASSOCIATED_WITH"}, {"id": 373, "from": "MONDO_0008903", "to": "ENSG00000003249", "relation": "ASSOCIATED_WITH"}, {"id": 374, "from": "MONDO_0008903", "to": "ENSG00000003393", "relation": "ASSOCIATED_WITH"}, {"id": 375, "from": "MONDO_0008903", "to": "ENSG00000003400", "relation": "ASSOCIATED_WITH"}, {"id": 376, "from": "MONDO_0008903", "to": "ENSG00000003402", "relation": "ASSOCIATED_WITH"}, {"id": 377, "from": "MONDO_0008903", "to": "ENSG00000003436", "relation": "ASSOCIATED_WITH"}, {"id": 378, "from": "MONDO_0008903", "to": "ENSG00000003756", "relation": "ASSOCIATED_WITH"}, {"id": 379, "from": "MONDO_0008903", "to": "ENSG00000003989", "relation": "ASSOCIATED_WITH"}, {"id": 380, "from": "MONDO_0008903", "to": "ENSG00000004139", "relation": "ASSOCIATED_WITH"}, {"id": 381, "from": "MONDO_0008903", "to": "ENSG00000004142", "relation": "ASSOCIATED_WITH"}, {"id": 382, "from": "MONDO_0008903", "to": "ENSG00000004399", "relation": "ASSOCIATED_WITH"}, {"id": 383, "from": "MONDO_0008903", "to": "ENSG00000004455", "relation": "ASSOCIATED_WITH"}, {"id": 384, "from": "MONDO_0008903", "to": "ENSG00000004468", "relation": "ASSOCIATED_WITH"}, {"id": 385, "from": "MONDO_0008903", "to": "ENSG00000004478", "relation": "ASSOCIATED_WITH"}, {"id": 386, "from": "MONDO_0008903", "to": "ENSG00000004487", "relation": "ASSOCIATED_WITH"}, {"id": 387, "from": "MONDO_0008903", "to": "ENSG00000004534", "relation": "ASSOCIATED_WITH"}, {"id": 388, "from": "MONDO_0008903", "to": "ENSG00000004660", "relation": "ASSOCIATED_WITH"}, {"id": 389, "from": "MONDO_0008903", "to": "ENSG00000004700", "relation": "ASSOCIATED_WITH"}, {"id": 390, "from": "MONDO_0008903", "to": "ENSG00000004776", "relation": "ASSOCIATED_WITH"}, {"id": 391, "from": "MONDO_0008903", "to": "ENSG00000004779", "relation": "ASSOCIATED_WITH"}, {"id": 392, "from": "MONDO_0008903", "to": "ENSG00000004799", "relation": "ASSOCIATED_WITH"}, {"id": 393, "from": "MONDO_0008903", "to": "ENSG00000004809", "relation": "ASSOCIATED_WITH"}, {"id": 394, "from": "MONDO_0008903", "to": "ENSG00000004838", "relation": "ASSOCIATED_WITH"}, {"id": 395, "from": "MONDO_0008903", "to": "ENSG00000004846", "relation": "ASSOCIATED_WITH"}, {"id": 396, "from": "MONDO_0008903", "to": "ENSG00000004848", "relation": "ASSOCIATED_WITH"}, {"id": 397, "from": "MONDO_0008903", "to": "ENSG00000004864", "relation": "ASSOCIATED_WITH"}, {"id": 398, "from": "MONDO_0008903", "to": "ENSG00000004866", "relation": "ASSOCIATED_WITH"}, {"id": 399, "from": "MONDO_0008903", "to": "ENSG00000004897", "relation": "ASSOCIATED_WITH"}, {"id": 400, "from": "MONDO_0008903", "to": "ENSG00000004939", "relation": "ASSOCIATED_WITH"}, {"id": 401, "from": "MONDO_0008903", "to": "ENSG00000004948", "relation": "ASSOCIATED_WITH"}, {"id": 402, "from": "MONDO_0008903", "to": "ENSG00000004975", "relation": "ASSOCIATED_WITH"}, {"id": 403, "from": "MONDO_0008903", "to": "ENSG00000005007", "relation": "ASSOCIATED_WITH"}, {"id": 404, "from": "MONDO_0008903", "to": "ENSG00000005020", "relation": "ASSOCIATED_WITH"}, {"id": 405, "from": "MONDO_0008903", "to": "ENSG00000005022", "relation": "ASSOCIATED_WITH"}, {"id": 406, "from": "MONDO_0008903", "to": "ENSG00000005073", "relation": "ASSOCIATED_WITH"}, {"id": 407, "from": "MONDO_0008903", "to": "ENSG00000005100", "relation": "ASSOCIATED_WITH"}, {"id": 408, "from": "MONDO_0008903", "to": "ENSG00000005102", "relation": "ASSOCIATED_WITH"}, {"id": 409, "from": "MONDO_0008903", "to": "ENSG00000005108", "relation": "ASSOCIATED_WITH"}, {"id": 410, "from": "MONDO_0008903", "to": "ENSG00000005156", "relation": "ASSOCIATED_WITH"}, {"id": 411, "from": "MONDO_0008903", "to": "ENSG00000005175", "relation": "ASSOCIATED_WITH"}, {"id": 412, "from": "MONDO_0008903", "to": "ENSG00000005187", "relation": "ASSOCIATED_WITH"}, {"id": 413, "from": "MONDO_0008903", "to": "ENSG00000005194", "relation": "ASSOCIATED_WITH"}, {"id": 414, "from": "MONDO_0008903", "to": "ENSG00000005243", "relation": "ASSOCIATED_WITH"}, {"id": 415, "from": "MONDO_0008903", "to": "ENSG00000005339", "relation": "ASSOCIATED_WITH"}, {"id": 416, "from": "MONDO_0008903", "to": "ENSG00000005379", "relation": "ASSOCIATED_WITH"}, {"id": 417, "from": "MONDO_0008903", "to": "ENSG00000005381", "relation": "ASSOCIATED_WITH"}, {"id": 418, "from": "MONDO_0008903", "to": "ENSG00000005421", "relation": "ASSOCIATED_WITH"}, {"id": 419, "from": "MONDO_0008903", "to": "ENSG00000005471", "relation": "ASSOCIATED_WITH"}, {"id": 420, "from": "MONDO_0008903", "to": "ENSG00000005483", "relation": "ASSOCIATED_WITH"}, {"id": 421, "from": "MONDO_0008903", "to": "ENSG00000005513", "relation": "ASSOCIATED_WITH"}, {"id": 422, "from": "MONDO_0008903", "to": "ENSG00000005700", "relation": "ASSOCIATED_WITH"}, {"id": 423, "from": "MONDO_0008903", "to": "ENSG00000005801", "relation": "ASSOCIATED_WITH"}, {"id": 424, "from": "MONDO_0008903", "to": "ENSG00000005810", "relation": "ASSOCIATED_WITH"}, {"id": 425, "from": "MONDO_0008903", "to": "ENSG00000005812", "relation": "ASSOCIATED_WITH"}, {"id": 426, "from": "MONDO_0008903", "to": "ENSG00000005844", "relation": "ASSOCIATED_WITH"}, {"id": 427, "from": "MONDO_0008903", "to": "ENSG00000005882", "relation": "ASSOCIATED_WITH"}, {"id": 428, "from": "MONDO_0008903", "to": "ENSG00000005884", "relation": "ASSOCIATED_WITH"}, {"id": 429, "from": "MONDO_0008903", "to": "ENSG00000005889", "relation": "ASSOCIATED_WITH"}, {"id": 430, "from": "MONDO_0008903", "to": "ENSG00000005893", "relation": "ASSOCIATED_WITH"}, {"id": 431, "from": "MONDO_0008903", "to": "ENSG00000005961", "relation": "ASSOCIATED_WITH"}, {"id": 432, "from": "MONDO_0008903", "to": "ENSG00000005981", "relation": "ASSOCIATED_WITH"}, {"id": 433, "from": "MONDO_0008903", "to": "ENSG00000006007", "relation": "ASSOCIATED_WITH"}, {"id": 434, "from": "MONDO_0008903", "to": "ENSG00000006016", "relation": "ASSOCIATED_WITH"}, {"id": 435, "from": "MONDO_0008903", "to": "ENSG00000006042", "relation": "ASSOCIATED_WITH"}, {"id": 436, "from": "MONDO_0008903", "to": "ENSG00000006047", "relation": "ASSOCIATED_WITH"}, {"id": 437, "from": "MONDO_0008903", "to": "ENSG00000006062", "relation": "ASSOCIATED_WITH"}, {"id": 438, "from": "MONDO_0008903", "to": "ENSG00000006071", "relation": "ASSOCIATED_WITH"}, {"id": 439, "from": "MONDO_0008903", "to": "ENSG00000006116", "relation": "ASSOCIATED_WITH"}, {"id": 440, "from": "MONDO_0008903", "to": "ENSG00000006118", "relation": "ASSOCIATED_WITH"}, {"id": 441, "from": "MONDO_0008903", "to": "ENSG00000006125", "relation": "ASSOCIATED_WITH"}, {"id": 442, "from": "MONDO_0008903", "to": "ENSG00000006128", "relation": "ASSOCIATED_WITH"}, {"id": 443, "from": "MONDO_0008903", "to": "ENSG00000006194", "relation": "ASSOCIATED_WITH"}, {"id": 444, "from": "MONDO_0008903", "to": "ENSG00000006210", "relation": "ASSOCIATED_WITH"}, {"id": 445, "from": "MONDO_0008903", "to": "ENSG00000006283", "relation": "ASSOCIATED_WITH"}, {"id": 446, "from": "MONDO_0008903", "to": "ENSG00000006327", "relation": "ASSOCIATED_WITH"}, {"id": 447, "from": "MONDO_0008903", "to": "ENSG00000006377", "relation": "ASSOCIATED_WITH"}, {"id": 448, "from": "MONDO_0008903", "to": "ENSG00000006432", "relation": "ASSOCIATED_WITH"}, {"id": 449, "from": "MONDO_0008903", "to": "ENSG00000006451", "relation": "ASSOCIATED_WITH"}, {"id": 450, "from": "MONDO_0008903", "to": "ENSG00000006453", "relation": "ASSOCIATED_WITH"}, {"id": 451, "from": "MONDO_0008903", "to": "ENSG00000006459", "relation": "ASSOCIATED_WITH"}, {"id": 452, "from": "MONDO_0008903", "to": "ENSG00000006468", "relation": "ASSOCIATED_WITH"}, {"id": 453, "from": "MONDO_0008903", "to": "ENSG00000006530", "relation": "ASSOCIATED_WITH"}, {"id": 454, "from": "MONDO_0008903", "to": "ENSG00000006534", "relation": "ASSOCIATED_WITH"}, {"id": 455, "from": "MONDO_0008903", "to": "ENSG00000006576", "relation": "ASSOCIATED_WITH"}, {"id": 456, "from": "MONDO_0008903", "to": "ENSG00000006606", "relation": "ASSOCIATED_WITH"}, {"id": 457, "from": "MONDO_0008903", "to": "ENSG00000006607", "relation": "ASSOCIATED_WITH"}, {"id": 458, "from": "MONDO_0008903", "to": "ENSG00000006625", "relation": "ASSOCIATED_WITH"}, {"id": 459, "from": "MONDO_0008903", "to": "ENSG00000006634", "relation": "ASSOCIATED_WITH"}, {"id": 460, "from": "MONDO_0008903", "to": "ENSG00000006638", "relation": "ASSOCIATED_WITH"}, {"id": 461, "from": "MONDO_0008903", "to": "ENSG00000006652", "relation": "ASSOCIATED_WITH"}, {"id": 462, "from": "MONDO_0008903", "to": "ENSG00000006659", "relation": "ASSOCIATED_WITH"}, {"id": 463, "from": "MONDO_0008903", "to": "ENSG00000006695", "relation": "ASSOCIATED_WITH"}, {"id": 464, "from": "MONDO_0008903", "to": "ENSG00000006704", "relation": "ASSOCIATED_WITH"}, {"id": 465, "from": "MONDO_0008903", "to": "ENSG00000006712", "relation": "ASSOCIATED_WITH"}, {"id": 466, "from": "MONDO_0008903", "to": "ENSG00000006715", "relation": "ASSOCIATED_WITH"}, {"id": 467, "from": "MONDO_0008903", "to": "ENSG00000006740", "relation": "ASSOCIATED_WITH"}, {"id": 468, "from": "MONDO_0008903", "to": "ENSG00000006744", "relation": "ASSOCIATED_WITH"}, {"id": 469, "from": "MONDO_0008903", "to": "ENSG00000006747", "relation": "ASSOCIATED_WITH"}, {"id": 470, "from": "MONDO_0008903", "to": "ENSG00000006788", "relation": "ASSOCIATED_WITH"}, {"id": 471, "from": "MONDO_0008903", "to": "ENSG00000006831", "relation": "ASSOCIATED_WITH"}, {"id": 472, "from": "MONDO_0008903", "to": "ENSG00000006837", "relation": "ASSOCIATED_WITH"}, {"id": 473, "from": "MONDO_0008903", "to": "ENSG00000007001", "relation": "ASSOCIATED_WITH"}, {"id": 474, "from": "MONDO_0008903", "to": "ENSG00000007047", "relation": "ASSOCIATED_WITH"}, {"id": 475, "from": "MONDO_0008903", "to": "ENSG00000007062", "relation": "ASSOCIATED_WITH"}, {"id": 476, "from": "MONDO_0008903", "to": "ENSG00000007168", "relation": "ASSOCIATED_WITH"}, {"id": 477, "from": "MONDO_0008903", "to": "ENSG00000007171", "relation": "ASSOCIATED_WITH"}, {"id": 478, "from": "MONDO_0008903", "to": "ENSG00000007174", "relation": "ASSOCIATED_WITH"}, {"id": 479, "from": "MONDO_0008903", "to": "ENSG00000007202", "relation": "ASSOCIATED_WITH"}, {"id": 480, "from": "MONDO_0008903", "to": "ENSG00000007216", "relation": "ASSOCIATED_WITH"}, {"id": 481, "from": "MONDO_0008903", "to": "ENSG00000007237", "relation": "ASSOCIATED_WITH"}, {"id": 482, "from": "MONDO_0008903", "to": "ENSG00000007264", "relation": "ASSOCIATED_WITH"}, {"id": 483, "from": "MONDO_0008903", "to": "ENSG00000007306", "relation": "ASSOCIATED_WITH"}, {"id": 484, "from": "MONDO_0008903", "to": "ENSG00000007312", "relation": "ASSOCIATED_WITH"}, {"id": 485, "from": "MONDO_0008903", "to": "ENSG00000007314", "relation": "ASSOCIATED_WITH"}, {"id": 486, "from": "MONDO_0008903", "to": "ENSG00000007341", "relation": "ASSOCIATED_WITH"}, {"id": 487, "from": "MONDO_0008903", "to": "ENSG00000007350", "relation": "ASSOCIATED_WITH"}, {"id": 488, "from": "MONDO_0008903", "to": "ENSG00000007372", "relation": "ASSOCIATED_WITH"}, {"id": 489, "from": "MONDO_0008903", "to": "ENSG00000007376", "relation": "ASSOCIATED_WITH"}, {"id": 490, "from": "MONDO_0008903", "to": "ENSG00000007384", "relation": "ASSOCIATED_WITH"}, {"id": 491, "from": "MONDO_0008903", "to": "ENSG00000007392", "relation": "ASSOCIATED_WITH"}, {"id": 492, "from": "MONDO_0008903", "to": "ENSG00000007402", "relation": "ASSOCIATED_WITH"}, {"id": 493, "from": "MONDO_0008903", "to": "ENSG00000007541", "relation": "ASSOCIATED_WITH"}, {"id": 494, "from": "MONDO_0008903", "to": "ENSG00000007545", "relation": "ASSOCIATED_WITH"}, {"id": 495, "from": "MONDO_0008903", "to": "ENSG00000007908", "relation": "ASSOCIATED_WITH"}, {"id": 496, "from": "MONDO_0008903", "to": "ENSG00000007933", "relation": "ASSOCIATED_WITH"}, {"id": 497, "from": "MONDO_0008903", "to": "ENSG00000007944", "relation": "ASSOCIATED_WITH"}, {"id": 498, "from": "MONDO_0008903", "to": "ENSG00000007952", "relation": "ASSOCIATED_WITH"}, {"id": 499, "from": "MONDO_0008903", "to": "ENSG00000007968", "relation": "ASSOCIATED_WITH"}, {"id": 500, "from": "MONDO_0008903", "to": "ENSG00000008018", "relation": "ASSOCIATED_WITH"}, {"id": 501, "from": "MONDO_0008903", "to": "ENSG00000008056", "relation": "ASSOCIATED_WITH"}, {"id": 502, "from": "MONDO_0008903", "to": "ENSG00000008083", "relation": "ASSOCIATED_WITH"}, {"id": 503, "from": "MONDO_0008903", "to": "ENSG00000008130", "relation": "ASSOCIATED_WITH"}, {"id": 504, "from": "MONDO_0008903", "to": "ENSG00000008196", "relation": "ASSOCIATED_WITH"}, {"id": 505, "from": "MONDO_0008903", "to": "ENSG00000008197", "relation": "ASSOCIATED_WITH"}, {"id": 506, "from": "MONDO_0008903", "to": "ENSG00000008226", "relation": "ASSOCIATED_WITH"}, {"id": 507, "from": "MONDO_0008903", "to": "HP_0000006", "relation": "PHENOTYPE_PRESENT"}, {"id": 508, "from": "MONDO_0008903", "to": "HP_0001442", "relation": "PHENOTYPE_PRESENT"}, {"id": 509, "from": "MONDO_0008903", "to": "HP_0006519", "relation": "PHENOTYPE_PRESENT"}, {"id": 510, "from": "MONDO_0008903", "to": "HP_0030078", "relation": "PHENOTYPE_PRESENT"}, {"id": 511, "from": "MONDO_0008903", "to": "HP_0030358", "relation": "PHENOTYPE_PRESENT"}]};
+
+
+    /* ── Visual configuration ────────────────────────────────────────────
+     *
+     * Add a new node type by inserting an entry in NODE_CONFIG.
+     * Add a new relationship by inserting an entry in EDGE_CONFIG.
+     * The rest of the app (filters, graph, details) picks it up
+     * automatically because everything is derived from GRAPH_DATA.
+     */
+    const NODE_CONFIG = {
+      DIS: { label: "Disease",   bg: "#FAECE7", border: "#993C1D", font: "#4A1B0C", size: 36 },
+      DRG: { label: "Drug",      bg: "#EEEDFE", border: "#534AB7", font: "#26215C", size: 16 },
+      GEN: { label: "Gene",      bg: "#E1F5EE", border: "#0F6E56", font: "#04342C", size: 14 },
+      PHE: { label: "Phenotype", bg: "#FAEEDA", border: "#854F0B", font: "#412402", size: 13 },
+    };
+
+    const EDGE_CONFIG = {
+      INDICATION:        { label: "Indication",        color: "#0F6E56" },
+      CONTRAINDICATION:  { label: "Contraindication",  color: "#D85A30" },
+      OFF_LABEL_USE:     { label: "Off-label use",     color: "#BA7517" },
+      ASSOCIATED_WITH:   { label: "Associated with",   color: "#534AB7" },
+      PHENOTYPE_PRESENT: { label: "Phenotype present", color: "#854F0B" },
+    };
+
+    /* External database links by node type and ID prefix */
+    function getExternalUrl(nodeId, nodeType) {
+      const curie  = nodeId.replace("_", ":");
+      const prefix = nodeId.split("_")[0];
+
+      if (nodeType === "DIS") {
+        if (prefix === "MONDO")    return "https://monarchinitiative.org/disease/" + curie;
+        if (prefix === "EFO")      return "https://www.ebi.ac.uk/efo/" + nodeId;
+        if (prefix === "Orphanet") return "https://www.orpha.net/consor/cgi-bin/OC_Exp.php?lng=EN&Expert=" + nodeId.split("_")[1];
+        if (prefix === "OMIM")     return "https://www.omim.org/entry/" + nodeId.split("_")[1];
+      }
+      if (nodeType === "DRG") {
+        if (nodeId.startsWith("DB"))     return "https://go.drugbank.com/drugs/" + nodeId;
+        if (nodeId.startsWith("CHEMBL")) return "https://www.ebi.ac.uk/chembl/compound_report_card/" + nodeId;
+      }
+      if (nodeType === "GEN") return "https://www.ncbi.nlm.nih.gov/gene/?term=" + nodeId;
+      if (nodeType === "PHE" && prefix === "HP") return "https://hpo.jax.org/app/browse/term/" + curie;
+      return null;
+    }
+
+
+    /* ── State ───────────────────────────────────────────────────────── */
+    let network  = null;
+    let allNodes = null;
+    let allEdges = null;
+
+
+    /* ── Entry point ─────────────────────────────────────────────────── */
+    document.addEventListener("DOMContentLoaded", function () {
+      populateSidebar();
+      buildGraph();
+      attachSearch();
+    });
+
+
+    /* ── Sidebar ─────────────────────────────────────────────────────── */
+    function populateSidebar() {
+      const meta = GRAPH_DATA.meta;
+
+      document.getElementById("disease-label").textContent = meta.title;
+      document.getElementById("disease-name").textContent  = meta.title;
+      document.getElementById("disease-id").textContent    = meta.disease_id;
+
+      const desc = meta.description || "";
+      document.getElementById("disease-desc").textContent = desc;
+      if (desc.length < 120) {
+        document.getElementById("desc-toggle").style.display = "none";
+      }
+
+      const extUrl = getExternalUrl(meta.disease_id, "DIS");
+      if (extUrl) {
+        const link   = document.getElementById("disease-external");
+        link.href    = extUrl;
+        link.style.display = "inline-block";
+      }
+
+      /* Header node counts */
+      const countsEl = document.getElementById("header-counts");
+      Object.entries(meta.counts || {}).forEach(function ([type, count]) {
+        if (type === "DIS") return;
+        const cfg  = NODE_CONFIG[type] || {};
+        const pill = document.createElement("span");
+        pill.className   = "count-pill";
+        pill.textContent = (cfg.label || type) + ": " + count;
+        countsEl.appendChild(pill);
+      });
+
+      /* Node type filter list */
+      const nodeList = document.getElementById("node-filter-list");
+      Object.entries(meta.counts || {}).forEach(function ([type, count]) {
+        const cfg = NODE_CONFIG[type] || { label: type, border: "#888" };
+        nodeList.appendChild(makeFilterRow("node", type, cfg.label, count, cfg.border));
+      });
+
+      /* Relationship filter list */
+      const edgeList = document.getElementById("edge-filter-list");
+      Object.entries(meta.edge_counts || {}).forEach(function ([relation, count]) {
+        const cfg = EDGE_CONFIG[relation] || { label: relation, color: "#888" };
+        edgeList.appendChild(makeFilterRow("edge", relation, cfg.label, count, cfg.color));
+      });
+    }
+
+    function makeFilterRow(filterType, key, label, count, swatchColor) {
+      const row = document.createElement("div");
+      row.className = "filter-row";
+
+      const cb  = document.createElement("input");
+      cb.type   = "checkbox";
+      cb.checked = true;
+      cb.addEventListener("change", function () {
+        applyFilter(filterType, key, cb.checked);
+      });
+
+      const dot = document.createElement("span");
+      dot.className        = "filter-swatch";
+      dot.style.background = swatchColor;
+
+      const name = document.createElement("span");
+      name.className   = "filter-name";
+      name.textContent = label;
+
+      const cnt = document.createElement("span");
+      cnt.className   = "filter-count";
+      cnt.textContent = count;
+
+      row.appendChild(cb);
+      row.appendChild(dot);
+      row.appendChild(name);
+      row.appendChild(cnt);
+      return row;
+    }
+
+
+    /* ── Graph ───────────────────────────────────────────────────────── */
+    function buildGraph() {
+      const container = document.getElementById("graph-canvas");
+
+      /*
+       * Node shape "dot" places the label below the circle, outside it.
+       * This keeps node labels readable without cluttering the circle itself.
+       * The color and size are set per node from NODE_CONFIG.
+       */
+      const visNodes = GRAPH_DATA.nodes.map(function (node) {
+        const cfg = NODE_CONFIG[node.type] || {};
+        return {
+          id:    node.id,
+          label: node.label,
+          title: buildTooltip(node),
+          shape: "dot",
+          size:  node.size || cfg.size || 16,
+          color: {
+            background: cfg.bg     || "#F0EFE8",
+            border:     cfg.border || "#888880",
+            highlight:  { background: cfg.bg || "#F0EFE8", border: "#2C2C2A" },
+          },
+          font: {
+            color: cfg.font || "#3C3B38",
+            size:  11,
+          },
+          _type:  node.type,
+          _props: node.props || {},
+        };
+      });
+
+      /*
+       * Edges use straight lines (smooth: false) and carry relation-type
+       * colors so researchers can distinguish indication from contraindication
+       * at a glance. Arrows show the direction of each relationship.
+       */
+      const visEdges = GRAPH_DATA.edges.map(function (edge) {
+        const cfg = EDGE_CONFIG[edge.relation] || {};
+        return {
+          id:     edge.id,
+          from:   edge.from,
+          to:     edge.to,
+          label:  cfg.label || edge.relation,
+          color:  { color: cfg.color || "#B4B2A9", highlight: "#2C2C2A" },
+          width:  1.5,
+          smooth: false,
+          arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+          font:   { size: 9, align: "middle", strokeWidth: 3, strokeColor: "#FAFAF8" },
+          _relation: edge.relation,
+        };
+      });
+
+      allNodes = new vis.DataSet(visNodes);
+      allEdges = new vis.DataSet(visEdges);
+
+      /*
+       * Physics configuration.
+       * forceAtlas2Based is well suited to hub-and-spoke graphs
+       * (one central disease with many connected nodes).
+       * The graph self-organises and continues to respond to drag
+       * interactions after the initial layout pass.
+       */
+      const options = {
+        nodes: {
+          shape: "dot",
+        },
+        edges: {
+          color:  { inherit: false },
+          smooth: false,
+        },
+        physics: {
+          forceAtlas2Based: {
+            gravitationalConstant: -25,
+            centralGravity:        0.005,
+            springLength:          200,
+            springConstant:        0.04,
+            damping:               0.9,
+          },
+          minVelocity: 0.1,
+          maxVelocity: 10,
+          solver:      "forceAtlas2Based",
+          stabilization: {
+            enabled:        true,
+            iterations:     1000,
+            updateInterval: 50,
+          },
+          timestep: 0.3,
+        },
+        interaction: {
+          hover:             true,
+          tooltipDelay:      150,
+          navigationButtons: false,
+          keyboard:          false,
+        },
+      };
+
+      network = new vis.Network(
+        container,
+        { nodes: allNodes, edges: allEdges },
+        options
+      );
+
+      /* Update progress bar during initial layout */
+      network.on("stabilizationProgress", function (params) {
+        const pct = Math.round((params.iterations / params.total) * 100);
+        document.getElementById("loading-label").textContent = "Laying out graph... " + pct + "%";
+        document.getElementById("loading-bar").style.width  = pct + "%";
+      });
+
+      /*
+       * Once the initial layout pass is done, hide the overlay and fit
+       * the graph into view. Physics remains active so the graph continues
+       * to self-organise when nodes are dragged or new interactions occur.
+       */
+      network.on("stabilizationIterationsDone", function () {
+        document.getElementById("loading-overlay").style.display = "none";
+        network.fit({ animation: { duration: 500, easingFunction: "easeInOutQuad" } });
+      });
+
+      /* Click a node to open its details panel */
+      network.on("click", function (params) {
+        if (params.nodes.length === 1) {
+          showDetails(allNodes.get(params.nodes[0]));
+        } else {
+          closeDetails();
+        }
+      });
+    }
+
+    function buildTooltip(node) {
+      /* Plain text tooltip on hover. The details panel carries the full record. */
+      const lines = [node.label, "Type: " + node.type, "ID: " + node.id];
+      if (node.props && node.props.description) {
+        const d = node.props.description;
+        lines.push("", d.length > 160 ? d.slice(0, 160) + "..." : d);
+      }
+      return lines.join("\n");
+    }
+
+
+    /* ── Details panel ───────────────────────────────────────────────── */
+    function showDetails(node) {
+      const body  = document.getElementById("details-body");
+      const cfg   = NODE_CONFIG[node._type] || {};
+      const props = node._props || {};
+
+      /* Count edges by relation type for this node */
+      const relCounts = {};
+      allEdges.get().forEach(function (e) {
+        if (e.from === node.id || e.to === node.id) {
+          relCounts[e._relation] = (relCounts[e._relation] || 0) + 1;
+        }
+      });
+
+      let html = "";
+
+      html += '<span class="detail-badge" style="background:' + (cfg.bg || "#F0EFE8")
+            + ';color:' + (cfg.font || "#333")
+            + ';border:1px solid ' + (cfg.border || "#888") + '">'
+            + (cfg.label || node._type) + "</span>";
+
+      html += '<div class="detail-node-name">' + esc(node.label) + "</div>";
+      html += '<div class="detail-node-id">'   + esc(node.id)    + "</div>";
+
+      if (props.description) {
+        html += '<div class="detail-description">' + esc(props.description) + "</div>";
+      }
+
+      /* Properties table — skips description (shown above) and empty values */
+      const propRows = Object.entries(props).filter(function ([k, v]) {
+        return k !== "description" && v !== null && v !== undefined && String(v) !== "";
+      });
+
+      if (propRows.length > 0) {
+        html += '<div class="detail-section-label">Properties</div><table class="props-table">';
+        propRows.forEach(function ([key, val]) {
+          const display = Array.isArray(val) ? val.join(", ") : String(val);
+          if (display && display !== "null" && display !== "None") {
+            html += "<tr>"
+                  + '<td class="prop-key">' + esc(key.replace(/_/g, " ")) + "</td>"
+                  + '<td class="prop-val">' + esc(display) + "</td>"
+                  + "</tr>";
+          }
+        });
+        html += "</table>";
+      }
+
+      /* Connection breakdown */
+      if (Object.keys(relCounts).length > 0) {
+        html += '<div class="detail-section-label">Connections</div><table class="props-table">';
+        Object.entries(relCounts).forEach(function ([rel, count]) {
+          const relCfg = EDGE_CONFIG[rel] || { label: rel, color: "#888" };
+          html += "<tr>"
+                + '<td class="prop-key">'
+                + '<span class="conn-dot" style="background:' + relCfg.color + '"></span>'
+                + esc(relCfg.label)
+                + "</td>"
+                + '<td class="prop-val">' + count + "</td>"
+                + "</tr>";
+        });
+        html += "</table>";
+      }
+
+      const extUrl = getExternalUrl(node.id, node._type);
+      if (extUrl) {
+        html += '<a class="detail-external-link" href="' + extUrl
+              + '" target="_blank" rel="noopener">View in external database</a>';
+      }
+
+      body.innerHTML = html;
+      document.getElementById("details-panel").classList.remove("closed");
+    }
+
+    function closeDetails() {
+      document.getElementById("details-panel").classList.add("closed");
+    }
+
+
+    /* ── Filters ─────────────────────────────────────────────────────── */
+    function applyFilter(filterType, key, visible) {
+      if (filterType === "node") {
+        /*
+         * Hiding a node type also suppresses its edges automatically in
+         * vis.js — edges to hidden nodes are not rendered. No manual
+         * edge update is needed for node type filters.
+         */
+        const updates = [];
+        allNodes.forEach(function (n) {
+          if (n._type === key) updates.push({ id: n.id, hidden: !visible });
+        });
+        allNodes.update(updates);
+      } else {
+        /* Edge relation filter: hide or show edges by relation type */
+        const updates = [];
+        allEdges.forEach(function (e) {
+          if (e._relation === key) updates.push({ id: e.id, hidden: !visible });
+        });
+        allEdges.update(updates);
+      }
+    }
+
+
+    /* ── Search ──────────────────────────────────────────────────────── */
+    function attachSearch() {
+      const input = document.getElementById("search-input");
+      const hint  = document.getElementById("search-hint");
+
+      input.addEventListener("input", function () {
+        const query = this.value.trim().toLowerCase();
+
+        if (!query) {
+          network.unselectAll();
+          hint.textContent = "";
+          return;
+        }
+
+        const matches = [];
+        allNodes.forEach(function (n) {
+          if (!n.hidden && n.label.toLowerCase().includes(query)) matches.push(n.id);
+        });
+
+        if (matches.length === 0) {
+          hint.textContent = "No match found.";
+          network.unselectAll();
+          return;
+        }
+
+        hint.textContent = matches.length + " match" + (matches.length > 1 ? "es" : "");
+        network.selectNodes(matches);
+        network.focus(matches[0], {
+          scale:     1.4,
+          animation: { duration: 400, easingFunction: "easeInOutQuad" },
+        });
+        showDetails(allNodes.get(matches[0]));
+      });
+    }
+
+
+    /* ── Utilities ───────────────────────────────────────────────────── */
+    function resetView() {
+      network.fit({ animation: { duration: 400, easingFunction: "easeInOutQuad" } });
+    }
+
+    function toggleDescription() {
+      const descEl   = document.getElementById("disease-desc");
+      const expanded = descEl.classList.toggle("expanded");
+      document.getElementById("desc-toggle").textContent = expanded ? "Read less" : "Read more";
+    }
+
+    function exportPNG() {
+      /* vis.js draws onto a <canvas> element that we can export directly */
+      const canvas   = document.querySelector("#graph-canvas canvas");
+      if (!canvas) return;
+      const filename = (GRAPH_DATA.meta.title || "graph").replace(/\s+/g, "_") + "_graph.png";
+      const link     = document.createElement("a");
+      link.download  = filename;
+      link.href      = canvas.toDataURL("image/png");
+      link.click();
+    }
+
+    function esc(str) {
+      /* Minimal HTML escaping for content set via innerHTML */
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+  </script>
+</body>
+</html>

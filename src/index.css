@@ -54,7 +54,7 @@ body {
   .mac-menubar    { background: var(--mac-menubar-bg);  border-bottom: 1px solid var(--mac-title-border); }
   .mac-mobile-bg  { background: var(--mac-mobile-bg); }
   .mac-mobile-card { background: var(--mac-mobile-card); border: 1px solid var(--mac-card-border); }
-  .font-os        { font-family: 'JetBrains Mono', monospace; }
+  .font-os        { font-family: 'DM Sans', monospace; }
 }
 
 ::-webkit-scrollbar { width: 4px; }

@@ -11,6 +11,18 @@ import Stack from '../sections/Stack'
 import Contact from '../sections/Contact'
 import bg from '../../assets/bg_1.jpg'
 
+const base = import.meta.env.BASE_URL
+
+const CvPreview = () => (
+  <div className="w-full h-[75vh]">
+    <iframe
+      src={`${base}cv.pdf`}
+      title="CV"
+      className="w-full h-full border-0 rounded-lg"
+    />
+  </div>
+)
+
 const SECTIONS = [
   { id: 'about',    label: '~/about',     type: 'folder', Component: About },
   { id: 'projects', label: '~/projects',  type: 'folder', Component: Projects },
@@ -50,6 +62,13 @@ export default function Desktop({ dark, onToggleTheme }) {
 
   const closeWindow = (id) => setWindows(prev => prev.filter(w => w.id !== id))
 
+  const openCv = () => openWindow({
+    id: 'cv',
+    label: 'cv.pdf',
+    Component: CvPreview,
+    widthClass: 'w-[720px]',
+  })
+
   return (
     <div className="w-screen h-screen overflow-hidden relative">
       <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${bg})` }} />
@@ -66,7 +85,7 @@ export default function Desktop({ dark, onToggleTheme }) {
             onClick={() => openWindow({ id: s.id, label: s.label, Component: s.Component })}
           />
         ))}
-        <DesktopIcon label="resume.pdf" type="pdf" onClick={() => window.open('/resume.pdf', '_blank')} />
+        <DesktopIcon label="cv.pdf" type="pdf" onClick={openCv} />
       </div>
 
       <AnimatePresence>

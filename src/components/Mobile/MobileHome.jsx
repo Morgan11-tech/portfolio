@@ -69,11 +69,11 @@ export default function MobileHome({ dark, onToggleTheme }) {
         ))}
 
         <a
-          href="/resume.pdf"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full mac-mobile-card rounded-xl px-5 py-4 flex items-center gap-4 active:scale-[0.98] transition-transform block"
-        >
+          href={`${import.meta.env.BASE_URL}cv.pdf`}
+  target="_blank"
+  rel="noopener noreferrer"
+  className="w-full mac-mobile-card rounded-xl px-5 py-4 flex items-center gap-4 active:scale-[0.98] transition-transform block"
+>
           <FileText size={18} strokeWidth={1.5} style={{ color: 'var(--mac-muted)' }} className="shrink-0" />
           <div className="flex-1">
             <p className="font-os text-sm" style={{ color: 'var(--mac-window-text)' }}>resume.pdf</p>
