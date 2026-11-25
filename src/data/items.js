@@ -1,3 +1,4 @@
+import iterata from "../assets/iterata.png";
 import expressmedCover from "../assets/expressmed-cover.png";
 import homecare from "../assets/homecare.png";
 import designCaseStudies from "../assets/DCS.png";
@@ -17,6 +18,22 @@ import signRace from "../assets/sign-race.png";
 const base = import.meta.env.BASE_URL;
 
 export const PROJECTS = [
+  {
+    id: "iterata",
+    name: "Iterata",
+    status: "in-progress",
+    date: "2026 – Present",
+    thumbnail: iterata,
+    images: [],
+    shortDesc:
+      "AI research web app for switching between any AI model without losing context, grounded in real papers.",
+    longDesc:
+      "A full-stack AI research app where users switch between any AI model without losing context, with output grounded in real papers from OpenAlex, arXiv and Semantic Scholar. Developed in Next.js, Neon Postgres, Drizzle and OpenRouter, with validated structured AI output, full-text paper search and a citation checker that flags made-up references.",
+    tech: ["Next.js", "Neon Postgres", "Drizzle", "OpenRouter"],
+    links: {
+      website: "https://iterata.vercel.app/auth/sign-in",
+    },
+  },
   {
     id: "expressmed-patient-app",
     name: "ExpressMed Patient App",
@@ -103,7 +120,7 @@ export const PROJECTS = [
     links: {
       // TODO: add the repo / demo once available
       github: null,
-      youtubeDemo: null,
+      youtubeDemo: "https://youtu.be/Lfz17uGMLrY",
     },
   },
   {
