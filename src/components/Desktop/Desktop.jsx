@@ -9,7 +9,7 @@ import Research from '../sections/Research'
 import Lab from '../sections/Lab'
 import Stack from '../sections/Stack'
 import Contact from '../sections/Contact'
-import bg from '../../assets/bg_1.jpg'
+import bg from '../../assets/bg_1.webp'
 
 const base = import.meta.env.BASE_URL
 
